@@ -1,0 +1,16 @@
+node_modules/
+.next/
+dist/
+build/
+
+# Secrets — only .env.example belongs in the repo.
+.env
+.env.local
+.env.*.local
+
+# Local PGlite database and uploaded files.
+.data/
+
+*.log
+.DS_Store
+Thumbs.db
