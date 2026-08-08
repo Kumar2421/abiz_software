@@ -1,7 +1,9 @@
 import { Router } from "express";
 
 import { query, queryOne } from "../db/index.js";
+import { decryptSecret } from "../lib/crypto.js";
 import { asyncHandler } from "../lib/http.js";
+import { getWhatsAppProvider } from "../providers/whatsapp.js";
 import { markWebhookVerified } from "../services/connection.js";
 import { applyStatusUpdate, receiveMessage } from "../services/messaging.js";
 
@@ -53,6 +55,14 @@ webhookRouter.get(
   }),
 );
 
+interface MediaPart {
+  id?: string;
+  mime_type?: string;
+  caption?: string;
+  filename?: string;
+  voice?: boolean;
+}
+
 interface CloudPayload {
   entry?: {
     changes?: {
@@ -64,6 +74,18 @@ interface CloudPayload {
           from?: string;
           type?: string;
           text?: { body?: string };
+          image?: MediaPart;
+          video?: MediaPart;
+          audio?: MediaPart;
+          document?: MediaPart;
+          sticker?: MediaPart;
+          location?: { latitude?: number; longitude?: number; name?: string };
+          button?: { text?: string };
+          interactive?: {
+            button_reply?: { title?: string };
+            list_reply?: { title?: string };
+          };
+          referral?: Record<string, unknown>;
         }[];
         statuses?: {
           id?: string;
@@ -73,6 +95,74 @@ interface CloudPayload {
       };
     }[];
   }[];
+}
+
+type InboundMessage = NonNullable<
+  NonNullable<
+    NonNullable<CloudPayload["entry"]>[number]["changes"]
+  >[number]["value"]
+>["messages"];
+
+type Inbound = NonNullable<InboundMessage>[number];
+
+/** The attachment on a message, whichever media field carries it. */
+function mediaPart(message: Inbound): MediaPart | undefined {
+  return (
+    message.image ??
+    message.video ??
+    message.audio ??
+    message.document ??
+    message.sticker
+  );
+}
+
+/**
+ * Readable text for any inbound type. Media captions come through as the body;
+ * locations and button taps become a short description so the thread still
+ * reads sensibly instead of showing an empty bubble.
+ */
+function bodyOf(message: Inbound): string {
+  if (message.text?.body) return message.text.body;
+
+  const part = mediaPart(message);
+  if (part?.caption) return part.caption;
+
+  if (message.location) {
+    const { latitude, longitude, name } = message.location;
+    return name ?? `Location: ${latitude}, ${longitude}`;
+  }
+
+  if (message.button?.text) return message.button.text;
+
+  const interactive =
+    message.interactive?.button_reply?.title ??
+    message.interactive?.list_reply?.title;
+  if (interactive) return interactive;
+
+  // Unsupported type (contacts, reaction, order, …): keep a placeholder so the
+  // conversation shows that something arrived.
+  return part ? "" : `[${message.type ?? "unsupported"} message]`;
+}
+
+async function downloadInbound(companyId: string, part: MediaPart) {
+  const account = await queryOne<{ access_token: string | null }>(
+    `SELECT access_token FROM whatsapp_accounts WHERE company_id = $1`,
+    [companyId],
+  );
+  const accessToken = decryptSecret(account?.access_token ?? null);
+  if (!accessToken) throw new Error("No access token stored for this company");
+
+  const { buffer, mimeType } = await getWhatsAppProvider().fetchMedia({
+    mediaId: part.id!,
+    accessToken,
+  });
+
+  const extension = (mimeType.split("/")[1] ?? "bin").split(";")[0]!;
+  return {
+    buffer,
+    mimeType: part.mime_type ?? mimeType,
+    fileName: part.filename ?? `${part.voice ? "voice-note" : "attachment"}.${extension}`,
+  };
 }
 
 const STATUS_MAP: Record<string, "sent" | "delivered" | "read" | "failed"> = {
@@ -110,18 +200,41 @@ webhookRouter.post(
           }
 
           for (const message of value?.messages ?? []) {
-            if (message.type !== "text" || !message.from) continue;
+            if (!message.from) continue;
 
             const profileName = value?.contacts?.find(
               (contact) => contact.wa_id === message.from,
             )?.profile?.name;
 
+            const part = mediaPart(message);
+            let media:
+              | { buffer: Buffer; fileName: string; mimeType: string }
+              | undefined;
+
+            if (part?.id) {
+              try {
+                media = await downloadInbound(account.company_id, part);
+              } catch (error) {
+                // Record the message even if the download fails — losing the
+                // text of "here is my prescription" is worse than losing the
+                // file, and the failure is visible in the logs.
+                await log(
+                  account.company_id,
+                  "media.download_failed",
+                  { messageId: message.id, mediaId: part.id },
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
+            }
+
             await receiveMessage({
               companyId: account.company_id,
               fromPhone: message.from,
-              body: message.text?.body ?? "",
+              body: bodyOf(message),
               profileName,
               waMessageId: message.id,
+              media,
+              referral: message.referral ?? null,
             });
           }
 

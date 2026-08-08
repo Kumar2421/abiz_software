@@ -16,6 +16,13 @@ export async function requireActiveSubscription(
   next: NextFunction,
 ) {
   try {
+    // Platform admins operate Abiz; they are not customers of it, so billing
+    // never gates them.
+    if (req.user!.role === "admin") {
+      next();
+      return;
+    }
+
     const subscription = await getSubscription(req.user!.companyId);
     if (!canSend(subscription.status)) {
       throw new ApiError(

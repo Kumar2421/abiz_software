@@ -53,6 +53,10 @@ const schema = z.object({
 
   // Free trial length for a brand-new account.
   TRIAL_DAYS: z.coerce.number().int().min(0).default(1),
+
+  // Shared secret for POST /api/automation/cron/run-scheduled. Without it the
+  // endpoint refuses to run, so reminders never fire from an unguarded call.
+  CRON_SECRET: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

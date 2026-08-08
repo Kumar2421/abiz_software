@@ -120,6 +120,9 @@ billingRouter.get(
         periodDays: plan.period_days,
       },
       configured: razorpayConfigured(),
+      // Platform admins run Abiz rather than subscribe to it, so the UI hides
+      // billing for them instead of asking the operator to pay.
+      billable: req.user!.role !== "admin",
     });
   }),
 );

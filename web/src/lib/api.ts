@@ -142,6 +142,8 @@ export interface BillingStatus {
   };
   /** False until Razorpay keys are set on the server. */
   configured: boolean;
+  /** False for platform admins — they operate Abiz, they do not buy it. */
+  billable: boolean;
 }
 
 export interface PaymentRecord {
@@ -167,6 +169,23 @@ export interface AdminUser {
   status: "active" | "suspended";
   created_at: string;
   company_name: string;
+  subscription_status: SubscriptionStatus;
+  trial_ends_at: string | null;
+  activated_at: string | null;
+  plan_name: string | null;
+  paid_paise: string | number;
+}
+
+export interface AdminPayment {
+  id: string;
+  company_name: string;
+  razorpay_order_id: string;
+  razorpay_payment_id: string | null;
+  amount_paise: number;
+  currency: string;
+  status: string;
+  error: string | null;
+  created_at: string;
 }
 
 export interface AdminAccount {
@@ -343,6 +362,9 @@ export const api = {
 
   adminDeleteUser: (id: string) =>
     request<{ ok: true }>(`/api/admin/users/${id}`, { method: "DELETE" }),
+
+  adminPayments: () =>
+    request<{ payments: AdminPayment[] }>("/api/admin/payments"),
 
   adminAccounts: () =>
     request<{ accounts: AdminAccount[] }>("/api/admin/whatsapp-accounts"),

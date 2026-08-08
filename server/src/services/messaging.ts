@@ -419,6 +419,10 @@ export async function receiveMessage(params: {
   body: string;
   profileName?: string;
   waMessageId?: string;
+  /** Already-downloaded attachment bytes, for non-text inbound messages. */
+  media?: { buffer: Buffer; fileName: string; mimeType: string };
+  /** Click-to-WhatsApp ad the customer arrived from, if any. */
+  referral?: Record<string, unknown> | null;
 }) {
   const contact = await upsertContact(
     params.companyId,
@@ -430,15 +434,40 @@ export async function receiveMessage(params: {
     contact.id,
   );
 
+  const stored = params.media
+    ? await storeMedia({
+        companyId: params.companyId,
+        buffer: params.media.buffer,
+        fileName: params.media.fileName,
+        mimeType: params.media.mimeType,
+      })
+    : null;
+
   const inbound = await insertMessage(params.companyId, conversation.id, {
     direction: "in",
     body: params.body,
     status: "delivered",
     waMessageId: params.waMessageId ?? null,
+    messageType: stored ? stored.kind : "text",
+    mediaId: stored?.id ?? null,
   });
 
+  // The first ad-originated message tells us which campaign produced this
+  // customer. Recorded once; later messages must not overwrite it.
+  if (params.referral) {
+    await query(
+      `UPDATE conversations
+          SET ad_referral = COALESCE(ad_referral, $2::jsonb)
+        WHERE id = $1`,
+      [conversation.id, JSON.stringify(params.referral)],
+    );
+  }
+
   await touchConversation(params.companyId, conversation.id, {
-    lastMessage: params.body,
+    // A photo with no caption still needs a readable list preview.
+    lastMessage:
+      params.body ||
+      (stored ? `[${stored.kind}] ${stored.fileName}` : ""),
     direction: "in",
     at: new Date(inbound.created_at).toISOString(),
     bumpUnread: true,

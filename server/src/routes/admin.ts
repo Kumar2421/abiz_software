@@ -13,9 +13,20 @@ adminRouter.get(
   asyncHandler(async (_req, res) => {
     const users = await query(
       `SELECT u.id, u.name, u.email, u.role, u.status, u.created_at,
-              c.name AS company_name
+              c.name AS company_name,
+              COALESCE(s.status, 'TRIAL') AS subscription_status,
+              s.trial_ends_at, s.activated_at,
+              p.name AS plan_name,
+              -- Total actually collected from this business.
+              COALESCE((
+                SELECT sum(pay.amount_paise)
+                  FROM payments pay
+                 WHERE pay.company_id = c.id AND pay.status = 'captured'
+              ), 0) AS paid_paise
          FROM users u
          JOIN companies c ON c.id = u.company_id
+         LEFT JOIN subscriptions s ON s.company_id = c.id
+         LEFT JOIN plans p ON p.id = s.plan_id
         ORDER BY u.created_at DESC`,
     );
     res.json({ users });
@@ -70,6 +81,24 @@ adminRouter.get(
         ORDER BY w.updated_at DESC`,
     );
     res.json({ accounts });
+  }),
+);
+
+/** Every payment across every business, for reconciliation. */
+adminRouter.get(
+  "/payments",
+  asyncHandler(async (_req, res) => {
+    const payments = await query(
+      `SELECT pay.id, c.name AS company_name,
+              pay.razorpay_order_id, pay.razorpay_payment_id,
+              pay.amount_paise, pay.currency, pay.status, pay.error,
+              pay.created_at
+         FROM payments pay
+         JOIN companies c ON c.id = pay.company_id
+        ORDER BY pay.created_at DESC
+        LIMIT 200`,
+    );
+    res.json({ payments });
   }),
 );
 

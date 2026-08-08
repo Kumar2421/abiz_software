@@ -44,6 +44,11 @@ export interface WhatsAppProvider {
     phoneNumberId: string;
     accessToken: string;
   }): Promise<VerifyResult>;
+  /** Downloads an inbound attachment the customer sent. */
+  fetchMedia(params: {
+    mediaId: string;
+    accessToken: string;
+  }): Promise<{ buffer: Buffer; mimeType: string }>;
 }
 
 /**
@@ -66,6 +71,9 @@ const mockProvider: WhatsAppProvider = {
       error:
         "Demo mode cannot verify credentials with Meta. Set WHATSAPP_DRIVER=cloud to check them for real.",
     };
+  },
+  async fetchMedia() {
+    throw new Error("Demo mode has no Meta media to download");
   },
 };
 
@@ -122,6 +130,37 @@ const cloudProvider: WhatsAppProvider = {
         error: error instanceof Error ? error.message : "Network error",
       };
     }
+  },
+
+  async fetchMedia({ mediaId, accessToken }) {
+    // Two steps: the id resolves to a short-lived signed URL, which then has
+    // to be fetched with the same bearer token.
+    const lookup = await fetch(
+      `https://graph.facebook.com/${env.META_GRAPH_VERSION}/${mediaId}`,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    const meta = (await lookup.json()) as {
+      url?: string;
+      mime_type?: string;
+      file_size?: number;
+      error?: { message?: string };
+    };
+
+    if (!lookup.ok || !meta.url) {
+      throw new Error(meta.error?.message ?? "Could not resolve media id");
+    }
+
+    const download = await fetch(meta.url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!download.ok) {
+      throw new Error(`Media download failed (HTTP ${download.status})`);
+    }
+
+    return {
+      buffer: Buffer.from(await download.arrayBuffer()),
+      mimeType: meta.mime_type ?? "application/octet-stream",
+    };
   },
 
   async verify({ phoneNumberId, accessToken }) {

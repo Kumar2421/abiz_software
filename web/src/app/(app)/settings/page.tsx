@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
+import { useSession } from "@/components/app-shell/auth-guard";
 import { CheckoutPanel } from "@/components/billing/checkout-panel";
 import { formatMoney } from "@/components/ui/modern-payment-form";
 import { Badge } from "@/components/ui/badge";
@@ -231,6 +232,8 @@ function SettingsView() {
   const router = useRouter();
   // Deep link from the subscription banner: /settings?tab=billing
   const initialTab = useSearchParams().get("tab") ?? "whatsapp";
+  // Platform admins have no subscription of their own.
+  const billable = useSession().user.role !== "admin";
   const [data, setData] = React.useState<SettingsPayload | null>(null);
   const [saving, setSaving] = React.useState<string | null>(null);
   const [issues, setIssues] = React.useState<Record<string, string>>({});
@@ -309,13 +312,15 @@ function SettingsView() {
         <TabsList>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
           <TabsTrigger value="welcome">Welcome message</TabsTrigger>
-          <TabsTrigger value="billing">Billing</TabsTrigger>
+          {billable && <TabsTrigger value="billing">Billing</TabsTrigger>}
           <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="billing">
-          <BillingTab />
-        </TabsContent>
+        {billable && (
+          <TabsContent value="billing">
+            <BillingTab />
+          </TabsContent>
+        )}
 
         {/* ---------------- WhatsApp ---------------- */}
         <TabsContent value="whatsapp">

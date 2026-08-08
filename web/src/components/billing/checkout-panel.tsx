@@ -75,7 +75,7 @@ export function CheckoutPanel({
         const status = await api.billingStatus();
         if (cancelled) return;
         setBilling(status);
-        if (status.subscription.status === "ACTIVE") {
+        if (status.billable && status.subscription.status === "ACTIVE") {
           setPaid({ subscription: status.subscription });
         }
       } catch {
@@ -151,6 +151,15 @@ export function CheckoutPanel({
         <Skeleton className="h-8 w-40" />
         <Skeleton className="h-72 w-full max-w-md" />
       </div>
+    );
+  }
+
+  if (!billing.billable) {
+    return (
+      <p className="p-4 text-sm text-muted-foreground">
+        This is a platform administrator account. Abiz subscriptions apply to
+        business accounts, not to the operator.
+      </p>
     );
   }
 

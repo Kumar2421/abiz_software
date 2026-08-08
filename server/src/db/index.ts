@@ -87,14 +87,31 @@ const TRANSIENT = new Set([
   "EPIPE",
 ]);
 
+/**
+ * Some pg failures arrive as a plain Error with no `code` — a pooled socket
+ * that the server had already closed, or a connect that timed out. They are
+ * just as transient, so they are matched on message instead.
+ */
+const TRANSIENT_MESSAGES = [
+  "connection terminated",
+  "connection timeout",
+  "server closed the connection",
+  "terminating connection",
+  "connection ended unexpectedly",
+  "socket hang up",
+];
+
 function isTransient(error: unknown): boolean {
   const code = (error as { code?: string })?.code;
-  return typeof code === "string" && TRANSIENT.has(code);
+  if (typeof code === "string" && TRANSIENT.has(code)) return true;
+
+  const message = (error as { message?: string })?.message?.toLowerCase() ?? "";
+  return TRANSIENT_MESSAGES.some((needle) => message.includes(needle));
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+async function withRetry<T>(run: () => Promise<T>, attempts = 4): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
@@ -102,9 +119,9 @@ async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
     } catch (error) {
       if (!isTransient(error)) throw error;
       lastError = error;
-      // 100ms, 300ms — long enough for DNS to recover, short enough that the
-      // request still feels instant.
-      await sleep(100 * 3 ** attempt);
+      // 200ms, 600ms, 1.8s — enough for a dropped socket to be replaced and a
+      // fresh TLS handshake to complete across regions.
+      await sleep(200 * 3 ** attempt);
     }
   }
   throw lastError;
@@ -128,11 +145,15 @@ async function createPostgres(connectionString: string): Promise<Database> {
     // instance multiplies into hundreds of Postgres connections. Keep it tiny
     // there and use the provider's pooled connection string.
     max: process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 10,
-    // Hold connections longer: every new one costs a DNS lookup and a TLS
-    // handshake, which is where the transient failures happen.
-    idleTimeoutMillis: 60_000,
+    // Shorter than the pooler's own idle cutoff, so we drop sockets before it
+    // does. Holding them longer meant pg handing out connections the server
+    // had already closed.
+    idleTimeoutMillis: 20_000,
     keepAlive: true,
-    connectionTimeoutMillis: 10_000,
+    keepAliveInitialDelayMillis: 5_000,
+    // The Supabase project is in ap-southeast-2; a first connect from India
+    // needs more headroom than the 10s default allowed.
+    connectionTimeoutMillis: 20_000,
   });
 
   // A dead idle socket must not take the process down.

@@ -8,6 +8,7 @@ import { clientOrigins, env } from "./env.js";
 import { errorHandler } from "./lib/http.js";
 import { adminRouter } from "./routes/admin.js";
 import { authRouter } from "./routes/auth.js";
+import { automationRouter } from "./routes/automation.js";
 import { billingRouter } from "./routes/billing.js";
 import { contactsRouter } from "./routes/contacts.js";
 import { conversationsRouter } from "./routes/conversations.js";
@@ -39,6 +40,7 @@ app.get("/health", async (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/automation", automationRouter);
 app.use("/api/contacts", contactsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/settings", settingsRouter);

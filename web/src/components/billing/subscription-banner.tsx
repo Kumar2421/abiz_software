@@ -21,12 +21,16 @@ export function SubscriptionBanner() {
     null,
   );
 
+  const [billable, setBillable] = React.useState(true);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const { subscription: current } = await api.billingStatus();
-        if (!cancelled) setSubscription(current);
+        const status = await api.billingStatus();
+        if (cancelled) return;
+        setSubscription(status.subscription);
+        setBillable(status.billable);
       } catch {
         // Billing is not critical to rendering the app; stay quiet.
       }
@@ -36,6 +40,8 @@ export function SubscriptionBanner() {
     };
   }, []);
 
+  // Platform admins are never nagged to pay.
+  if (!billable) return null;
   if (!subscription || subscription.status === "ACTIVE") return null;
 
   const blocked = !canSend(subscription.status);

@@ -18,6 +18,7 @@ import {
   type AdminUser,
   type AdminWebhookLog,
 } from "@/lib/api";
+import { formatMoney } from "@/components/ui/modern-payment-form";
 import { formatPhone } from "@/lib/format";
 
 const stamp = (value: string) =>
@@ -170,8 +171,9 @@ export default function AdminPage() {
               <>
                 <th className="px-4 py-2 font-medium">User</th>
                 <th className="px-4 py-2 font-medium">Company</th>
-                <th className="px-4 py-2 font-medium">Role</th>
-                <th className="px-4 py-2 font-medium">Status</th>
+                <th className="px-4 py-2 font-medium">Subscription</th>
+                <th className="px-4 py-2 font-medium">Paid</th>
+                <th className="px-4 py-2 font-medium">Account</th>
                 <th className="px-4 py-2 font-medium">Joined</th>
                 <th className="w-24 px-4 py-2" />
               </>
@@ -185,7 +187,39 @@ export default function AdminPage() {
                 </td>
                 <td className="px-4 py-2.5">{user.company_name}</td>
                 <td className="px-4 py-2.5">
-                  <Badge variant="secondary">{user.role}</Badge>
+                  {user.role === "admin" ? (
+                    // Operators do not subscribe, so a status here would be
+                    // meaningless.
+                    <span className="text-xs text-muted-foreground">
+                      Platform admin
+                    </span>
+                  ) : (
+                    <>
+                      <Badge
+                        variant={
+                          user.subscription_status === "ACTIVE"
+                            ? "outline"
+                            : user.subscription_status === "TRIAL"
+                              ? "secondary"
+                              : "destructive"
+                        }
+                      >
+                        {user.subscription_status}
+                      </Badge>
+                      {user.plan_name && (
+                        <span className="ml-1 text-xs text-muted-foreground">
+                          {user.plan_name}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 tabular-nums">
+                  {user.role === "admin"
+                    ? "—"
+                    : Number(user.paid_paise) > 0
+                      ? formatMoney(Number(user.paid_paise))
+                      : "—"}
                 </td>
                 <td className="px-4 py-2.5">
                   <Badge

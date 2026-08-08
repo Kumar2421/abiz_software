@@ -87,10 +87,12 @@ export default function OnboardingPage() {
     let cancelled = false;
     (async () => {
       try {
-        const { subscription } = await api.billingStatus();
+        const { subscription, billable } = await api.billingStatus();
         if (cancelled) return;
         setTrialActive(subscription.status === "TRIAL");
-        if (subscription.status === "ACTIVE") setStep(1);
+        // Paid accounts, and platform admins who never pay, skip straight to
+        // the WhatsApp connection step.
+        if (!billable || subscription.status === "ACTIVE") setStep(1);
       } catch {
         // Billing is optional to render onboarding.
       }
