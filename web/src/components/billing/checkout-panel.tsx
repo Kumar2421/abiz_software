@@ -172,12 +172,19 @@ export function CheckoutPanel({
     );
   }
 
+  // Closed payment window wins over the unconfigured message: it is the one
+  // the customer can act on.
+  const blocked = !billing.paymentWindow.open || !billing.configured;
+  const reason = !billing.paymentWindow.open
+    ? billing.paymentWindow.reason
+    : "Payments are not configured on the server yet — add the Razorpay keys to enable checkout.";
+
   return (
     <ModernPaymentForm
       plan={billing.plan}
       pending={pending}
-      disabled={!billing.configured}
-      disabledReason="Payments are not configured on the server yet — add the Razorpay keys to enable checkout."
+      disabled={blocked}
+      disabledReason={reason}
       onPay={pay}
     />
   );

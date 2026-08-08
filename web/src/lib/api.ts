@@ -144,6 +144,12 @@ export interface BillingStatus {
   configured: boolean;
   /** False for platform admins — they operate Abiz, they do not buy it. */
   billable: boolean;
+  /** Whether checkout may be started right now, and why not if closed. */
+  paymentWindow: {
+    open: boolean;
+    reason?: string;
+    opensAt?: string | null;
+  };
 }
 
 export interface PaymentRecord {
