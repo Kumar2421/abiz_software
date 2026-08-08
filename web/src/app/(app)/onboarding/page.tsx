@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { toast } from "sonner";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
+import { CheckoutPanel } from "@/components/billing/checkout-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,9 @@ import { API_URL, ApiError, api, type SettingsPayload } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Connect", "Verify webhook", "Welcome message"];
+// Payment comes first: the client's flow is choose plan, pay, then connect
+// Meta/WABA. The step is skipped automatically once the account is active.
+const STEPS = ["Activate", "Connect", "Verify webhook", "Welcome message"];
 
 function CopyField({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = React.useState(false);
@@ -77,6 +80,25 @@ export default function OnboardingPage() {
   const [qr, setQr] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [issues, setIssues] = React.useState<Record<string, string>>({});
+  const [trialActive, setTrialActive] = React.useState(false);
+
+  // An account that already paid should not be asked to pay again.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { subscription } = await api.billingStatus();
+        if (cancelled) return;
+        setTrialActive(subscription.status === "TRIAL");
+        if (subscription.status === "ACTIVE") setStep(1);
+      } catch {
+        // Billing is optional to render onboarding.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   React.useEffect(() => {
     api
@@ -95,7 +117,7 @@ export default function OnboardingPage() {
     : "";
 
   React.useEffect(() => {
-    if (step !== 1 || !waLink) return;
+    if (step !== 2 || !waLink) return;
     QRCode.toDataURL(waLink, { width: 220, margin: 1 })
       .then(setQr)
       .catch(() => setQr(null));
@@ -135,7 +157,7 @@ export default function OnboardingPage() {
         // the connection is live.
         toast.warning(connection.lastError ?? "Credentials saved, not verified");
       }
-      setStep(1);
+      setStep(2);
     } catch (error) {
       if (error instanceof ApiError && error.issues.length) {
         setIssues(
@@ -157,9 +179,9 @@ export default function OnboardingPage() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-xl font-semibold">Connect WhatsApp</h1>
+        <h1 className="text-xl font-semibold">Set up Abiz</h1>
         <p className="mb-6 text-sm text-muted-foreground">
-          Three steps and your inbox is live.
+          Activate your account, connect WhatsApp, and your inbox is live.
         </p>
 
         <ol className="mb-6 flex items-center gap-2">
@@ -190,6 +212,24 @@ export default function OnboardingPage() {
         </ol>
 
         {step === 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Activate your account</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <CheckoutPanel onActivated={() => setStep(1)} />
+              <div className="flex justify-center">
+                <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
+                  {trialActive
+                    ? "Continue on the free trial"
+                    : "Set up WhatsApp first"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {step === 1 && (
           <Card>
             <CardHeader>
               <CardTitle>Connect your WhatsApp Business Account</CardTitle>
@@ -245,7 +285,7 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {step === 1 && (
+        {step === 2 && (
           <Card>
             <CardHeader>
               <CardTitle>Verify webhook</CardTitle>
@@ -319,16 +359,16 @@ export default function OnboardingPage() {
               </div>
 
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep(0)}>
+                <Button variant="outline" onClick={() => setStep(1)}>
                   Back
                 </Button>
-                <Button onClick={() => setStep(2)}>Continue</Button>
+                <Button onClick={() => setStep(3)}>Continue</Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <Card>
             <CardHeader>
               <CardTitle>Welcome message</CardTitle>
@@ -357,7 +397,7 @@ export default function OnboardingPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={() => setStep(1)}>
+                <Button variant="outline" onClick={() => setStep(2)}>
                   Back
                 </Button>
                 <Button

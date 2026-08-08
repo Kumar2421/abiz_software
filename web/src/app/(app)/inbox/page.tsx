@@ -10,7 +10,6 @@ import { ConversationList } from "@/components/inbox/conversation-list";
 import { FolderNav } from "@/components/inbox/folder-nav";
 import { NewChatDialog } from "@/components/inbox/new-chat-dialog";
 import { ApiError, api } from "@/lib/api";
-import { getSocket } from "@/lib/socket";
 import type {
   Contact,
   Conversation,
@@ -25,6 +24,16 @@ const EMPTY_ACCOUNT: WhatsAppAccount = {
   phoneNumberId: "",
   status: "disconnected",
 };
+
+/**
+ * How often the inbox re-checks for new messages while the tab is visible.
+ *
+ * There is no websocket: the API runs as a serverless function, so every poll
+ * is a billable invocation. 30s keeps a single dashboard under ~30k calls a
+ * month. Anything the user does — sending, opening a chat, returning to the
+ * tab — refreshes immediately, so this interval only covers idle waiting.
+ */
+const POLL_MS = 30_000;
 
 export default function InboxPage() {
   return (
@@ -59,29 +68,15 @@ function InboxView() {
   const [query, setQuery] = React.useState("");
   const [contactOpen, setContactOpen] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
+  // Bumping this re-runs both fetch effects.
+  const [refreshKey, setRefreshKey] = React.useState(0);
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
   const messages = selectedId ? loadedMessages : [];
 
-  // Keep socket handlers reading the current selection without resubscribing.
-  const selectedIdRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    selectedIdRef.current = selectedId;
-  }, [selectedId]);
+  const refresh = React.useCallback(() => setRefreshKey((n) => n + 1), []);
 
-  /** Inserts or replaces a conversation and keeps the list newest-first. */
-  const applyConversation = React.useCallback((incoming: Conversation) => {
-    setConversations((prev) => {
-      const rest = prev.filter((c) => c.id !== incoming.id);
-      return [incoming, ...rest].sort(
-        (a, b) =>
-          new Date(b.lastMessageAt).getTime() -
-          new Date(a.lastMessageAt).getTime(),
-      );
-    });
-  }, []);
-
-  /* ---------------- conversation list (folder + debounced search) --------- */
+  /* ---------------- conversation list ------------------------------------ */
 
   React.useEffect(() => {
     let cancelled = false;
@@ -110,7 +105,7 @@ function InboxView() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [folder, query, router]);
+  }, [folder, query, router, refreshKey]);
 
   /* ---------------- open thread ------------------------------------------ */
 
@@ -124,56 +119,48 @@ function InboxView() {
         if (cancelled) return;
         setMessages(thread.messages);
         setWindowOpen(thread.sendWindow.open);
-        const { conversation } = await api.markRead(selectedId);
-        if (!cancelled) applyConversation(conversation);
+
+        // Clearing the badge is only worth a request when there is one.
+        if (thread.conversation.unreadCount > 0) {
+          const { conversation } = await api.markRead(selectedId);
+          if (!cancelled) {
+            setConversations((prev) =>
+              prev.map((c) => (c.id === conversation.id ? conversation : c)),
+            );
+          }
+        }
       } catch {
         if (!cancelled) toast.error("Could not open conversation");
       }
     })();
 
-    const socket = getSocket();
-    socket.emit("conversation:open", selectedId);
     return () => {
       cancelled = true;
-      socket.emit("conversation:close", selectedId);
     };
-  }, [selectedId, applyConversation]);
+  }, [selectedId, refreshKey]);
 
-  /* ---------------- realtime --------------------------------------------- */
+  /* ---------------- polling ---------------------------------------------- */
 
   React.useEffect(() => {
-    const socket = getSocket();
-
-    const onNew = (message: Message) => {
-      setMessages((prev) =>
-        message.conversationId === selectedIdRef.current &&
-        !prev.some((m) => m.id === message.id)
-          ? [...prev, message]
-          : prev,
-      );
-      if (message.direction === "in") setWindowOpen(true);
+    // Only poll while the tab is actually being looked at, and refresh at once
+    // when the user comes back to it.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") refresh();
     };
 
-    const onStatus = (message: Message) => {
-      setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? message : m)),
-      );
-    };
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, POLL_MS);
 
-    socket.on("message:new", onNew);
-    socket.on("message:status", onStatus);
-    socket.on("conversation:updated", applyConversation);
-    socket.on("connect_error", () => {
-      toast.error("Realtime connection lost");
-    });
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
 
     return () => {
-      socket.off("message:new", onNew);
-      socket.off("message:status", onStatus);
-      socket.off("conversation:updated", applyConversation);
-      socket.off("connect_error");
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
-  }, [applyConversation]);
+  }, [refresh]);
 
   /* ---------------- connection status ------------------------------------ */
 
@@ -201,12 +188,26 @@ function InboxView() {
   const handleSend = async (body: string) => {
     if (!selectedId) return;
     try {
-      // The server broadcasts both the pending row and its final status, so
-      // no local optimistic copy is needed here.
-      await api.sendMessage(selectedId, body);
+      const { message } = await api.sendMessage(selectedId, body);
+      // Show it straight away rather than waiting for the next poll.
+      setMessages((prev) => [...prev, message]);
+      refresh();
     } catch (error) {
       toast.error(
         error instanceof ApiError ? error.message : "Message failed to send",
+      );
+    }
+  };
+
+  const handleSendAttachment = async (file: File | Blob, caption?: string) => {
+    if (!selectedId) return;
+    try {
+      const { message } = await api.sendAttachment(selectedId, file, caption);
+      setMessages((prev) => [...prev, message]);
+      refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : "Attachment failed to send",
       );
     }
   };
@@ -230,8 +231,8 @@ function InboxView() {
     if (!selectedId) return;
     try {
       await api.archive(selectedId, folder !== "archived");
-      setConversations((prev) => prev.filter((c) => c.id !== selectedId));
       setSelectedId(null);
+      refresh();
       toast.success(folder === "archived" ? "Unarchived" : "Archived");
     } catch {
       toast.error("Could not archive conversation");
@@ -253,11 +254,12 @@ function InboxView() {
         conversations={conversations}
         selectedId={selectedId}
         onSelect={setSelectedId}
+        onRefresh={refresh}
         loading={loading}
         action={
           <NewChatDialog
             onCreated={(conversation) => {
-              applyConversation(conversation);
+              refresh();
               setSelectedId(conversation.id);
             }}
           />
@@ -272,6 +274,8 @@ function InboxView() {
           sendWindowOpen={windowOpen}
           demoMode={demoMode}
           onSend={handleSend}
+          onSendAttachment={handleSendAttachment}
+          onRefresh={refresh}
           onToggleContact={() => setContactOpen((open) => !open)}
           onArchive={handleArchive}
           onBack={() => setSelectedId(null)}

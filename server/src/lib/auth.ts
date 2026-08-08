@@ -46,8 +46,11 @@ export function signToken(user: { id: string; companyId: string }): string {
 export function setAuthCookie(res: Response, token: string) {
   res.cookie(TOKEN_COOKIE, token, {
     httpOnly: true,
-    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
-    secure: env.NODE_ENV === "production",
+    // "lax" works when the API is served from the same origin as the app
+    // (Netlify function under /api). Set COOKIE_SAMESITE=none only if the API
+    // lives on a different domain — Safari blocks those cookies by default.
+    sameSite: env.COOKIE_SAMESITE,
+    secure: env.COOKIE_SAMESITE === "none" || env.NODE_ENV === "production",
     maxAge: TOKEN_TTL_SECONDS * 1000,
     path: "/",
   });

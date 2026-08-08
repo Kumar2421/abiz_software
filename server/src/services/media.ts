@@ -1,16 +1,9 @@
-import { createReadStream } from "node:fs";
-import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
 import { queryOne } from "../db/index.js";
 import { ApiError } from "../lib/http.js";
-
-export const UPLOAD_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../../.data/uploads",
-);
+import { getStorage } from "./storage.js";
 
 /** WhatsApp's own caps, so nothing is accepted here that Meta would reject. */
 export const MEDIA_LIMITS = {
@@ -74,16 +67,15 @@ export async function storeMedia(params: {
   }
 
   const fileName = safeName(params.fileName) || `${kind}-${Date.now()}`;
-  // Files are stored per company, so one tenant's directory listing can never
-  // expose another's uploads.
+  // Keyed per company, so one tenant's listing can never expose another's
+  // uploads. The stored name is random — the original is kept in the database.
   const relative = path.posix.join(
     params.companyId,
     `${randomUUID()}${path.extname(fileName).toLowerCase()}`,
   );
-  const absolute = path.join(UPLOAD_ROOT, relative);
 
-  await mkdir(path.dirname(absolute), { recursive: true });
-  await writeFile(absolute, params.buffer);
+  const storage = await getStorage();
+  await storage.put(relative, params.buffer, params.mimeType);
 
   const row = await queryOne<{ id: string }>(
     `INSERT INTO media (company_id, file_name, mime_type, size_bytes, storage_path)
@@ -124,17 +116,13 @@ export async function findMedia(companyId: string, mediaId: string) {
   return row;
 }
 
-/** Opens a stored file for streaming. Rejects any path that escapes the root. */
-export function openMedia(row: MediaRow) {
-  const absolute = path.resolve(UPLOAD_ROOT, row.storage_path);
-  if (!absolute.startsWith(path.resolve(UPLOAD_ROOT) + path.sep)) {
-    throw ApiError.forbidden("Invalid file path");
-  }
-  return createReadStream(absolute);
+/** Opens a stored file for streaming. */
+export async function openMedia(row: MediaRow) {
+  const storage = await getStorage();
+  return storage.get(row.storage_path);
 }
 
 export async function deleteMediaFile(row: MediaRow) {
-  const absolute = path.resolve(UPLOAD_ROOT, row.storage_path);
-  if (!absolute.startsWith(path.resolve(UPLOAD_ROOT) + path.sep)) return;
-  await unlink(absolute).catch(() => undefined);
+  const storage = await getStorage();
+  await storage.remove(row.storage_path).catch(() => undefined);
 }

@@ -73,25 +73,81 @@ async function createPglite(): Promise<Database> {
   };
 }
 
+/**
+ * Network hiccups that say nothing about the query itself — a DNS blip or a
+ * dropped socket. Retrying these keeps a transient failure from surfacing as a
+ * 500 on someone's login.
+ */
+const TRANSIENT = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+
+function isTransient(error: unknown): boolean {
+  const code = (error as { code?: string })?.code;
+  return typeof code === "string" && TRANSIENT.has(code);
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function withRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!isTransient(error)) throw error;
+      lastError = error;
+      // 100ms, 300ms — long enough for DNS to recover, short enough that the
+      // request still feels instant.
+      await sleep(100 * 3 ** attempt);
+    }
+  }
+  throw lastError;
+}
+
 async function createPostgres(connectionString: string): Promise<Database> {
   const pg = await import("pg");
+  const dns = await import("node:dns");
+
+  // Supabase's pooler hostname resolves on both families; preferring IPv4
+  // avoids AAAA lookups that fail on IPv4-only networks.
+  dns.setDefaultResultOrder("ipv4first");
+
   const pool = new pg.default.Pool({
     connectionString,
     // Managed Postgres (Supabase/Neon) terminates TLS with its own CA.
     ssl: connectionString.includes("localhost")
       ? undefined
       : { rejectUnauthorized: false },
-    max: 10,
+    // Each serverless invocation gets its own sandbox, so a large pool per
+    // instance multiplies into hundreds of Postgres connections. Keep it tiny
+    // there and use the provider's pooled connection string.
+    max: process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME ? 1 : 10,
+    // Hold connections longer: every new one costs a DNS lookup and a TLS
+    // handshake, which is where the transient failures happen.
+    idleTimeoutMillis: 60_000,
+    keepAlive: true,
+    connectionTimeoutMillis: 10_000,
+  });
+
+  // A dead idle socket must not take the process down.
+  pool.on("error", (error) => {
+    console.error("Idle Postgres client error:", (error as Error).message);
   });
 
   return {
     driver: "postgres",
     async query<T>(sql: string, params: unknown[] = []) {
-      const result = await pool.query(sql, params as unknown[]);
+      const result = await withRetry(() => pool.query(sql, params as unknown[]));
       return result.rows as T[];
     },
     async exec(sql: string) {
-      await pool.query(sql);
+      await withRetry(() => pool.query(sql));
     },
     async transaction<T>(fn: (tx: Queryable) => Promise<T>) {
       const client = await pool.connect();
@@ -120,9 +176,23 @@ async function createPostgres(connectionString: string): Promise<Database> {
 
 export async function getDb(): Promise<Database> {
   if (instance) return instance;
-  instance = env.DATABASE_URL
-    ? await createPostgres(env.DATABASE_URL)
-    : await createPglite();
+
+  if (!env.DATABASE_URL) {
+    // PGlite writes to a local directory. Serverless sandboxes have no durable
+    // disk, so every cold start would come up with an empty database and
+    // concurrent invocations would each see their own copy. Fail loudly rather
+    // than silently losing data.
+    if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      throw new Error(
+        "DATABASE_URL is required in a serverless environment. " +
+          "PGlite needs a persistent disk; point this at Neon, Supabase, or another hosted Postgres.",
+      );
+    }
+    instance = await createPglite();
+    return instance;
+  }
+
+  instance = await createPostgres(env.DATABASE_URL);
   return instance;
 }
 

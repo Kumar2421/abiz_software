@@ -5,8 +5,12 @@ import type {
   Message,
 } from "@/lib/types";
 
-export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+/**
+ * Empty means "same origin" — on Netlify the API is a function mounted at
+ * /api, so relative URLs hit it directly. Local development sets
+ * NEXT_PUBLIC_API_URL=http://localhost:4000 in web/.env.local.
+ */
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 export interface FieldIssue {
   path: string;
@@ -105,6 +109,56 @@ export interface SettingsPayload {
   driver: "mock" | "cloud";
 }
 
+export type SubscriptionStatus =
+  | "TRIAL"
+  | "ACTIVE"
+  | "PAYMENT_PENDING"
+  | "PAST_DUE"
+  | "EXPIRED"
+  | "CANCELLED"
+  | "SUSPENDED";
+
+export interface Subscription {
+  status: SubscriptionStatus;
+  trialEndsAt: string | null;
+  activatedAt: string | null;
+  expiresAt: string | null;
+  plan: {
+    code: string;
+    name: string;
+    amountPaise: number;
+    currency: string;
+  } | null;
+}
+
+export interface BillingStatus {
+  subscription: Subscription;
+  plan: {
+    code: string;
+    name: string;
+    amountPaise: number;
+    currency: string;
+    periodDays: number | null;
+  };
+  /** False until Razorpay keys are set on the server. */
+  configured: boolean;
+}
+
+export interface PaymentRecord {
+  orderId: string;
+  paymentId: string | null;
+  amountPaise: number;
+  currency: string;
+  status: "created" | "authorized" | "captured" | "failed" | "refunded";
+  method: string | null;
+  error: string | null;
+  createdAt: string;
+}
+
+/** TRIAL and ACTIVE may send; everything else is read-only. */
+export const canSend = (status: SubscriptionStatus) =>
+  status === "TRIAL" || status === "ACTIVE";
+
 export interface AdminUser {
   id: string;
   name: string;
@@ -186,6 +240,22 @@ export const api = {
   sendMessage: (id: string, body: string) =>
     post<{ message: Message }>(`/api/conversations/${id}/messages`, { body }),
 
+  sendAttachment: (id: string, file: File | Blob, caption?: string) => {
+    const form = new FormData();
+    // Blobs from MediaRecorder have no name; give voice notes a real one.
+    form.append(
+      "file",
+      file,
+      file instanceof File ? file.name : "voice-note.webm",
+    );
+    if (caption) form.append("caption", caption);
+    // No Content-Type header: the browser must set the multipart boundary.
+    return request<{ message: Message }>(`/api/conversations/${id}/media`, {
+      method: "POST",
+      body: form,
+    });
+  },
+
   markRead: (id: string) =>
     post<{ conversation: Conversation }>(`/api/conversations/${id}/read`),
 
@@ -246,6 +316,25 @@ export const api = {
       };
       driver: "mock" | "cloud";
     }>("/api/settings/stats"),
+
+  billingStatus: () => request<BillingStatus>("/api/billing/status"),
+
+  createOrder: () =>
+    post<{
+      orderId: string;
+      amountPaise: number;
+      currency: string;
+      keyId: string;
+      planName: string;
+    }>("/api/billing/order"),
+
+  verifyPayment: (body: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => post<{ subscription: Subscription }>("/api/billing/verify", body),
+
+  payments: () => request<{ payments: PaymentRecord[] }>("/api/billing/payments"),
 
   adminUsers: () => request<{ users: AdminUser[] }>("/api/admin/users"),
 

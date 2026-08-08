@@ -3,6 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 
 import { requireAuth } from "../lib/auth.js";
+import { requireActiveSubscription } from "../lib/subscription.js";
 import { asyncHandler, parseBody, parseQuery } from "../lib/http.js";
 import { isValidPhone } from "../lib/phone.js";
 import { ApiError } from "../lib/http.js";
@@ -95,6 +96,7 @@ conversationsRouter.get(
 
 conversationsRouter.post(
   "/:id/messages",
+  requireActiveSubscription,
   asyncHandler(async (req, res) => {
     const { body } = parseBody(
       z.object({ body: z.string().trim().min(1).max(4096) }),
@@ -113,6 +115,7 @@ conversationsRouter.post(
 /** Attachment upload: one file plus an optional caption. */
 conversationsRouter.post(
   "/:id/media",
+  requireActiveSubscription,
   upload.single("file"),
   asyncHandler(async (req, res) => {
     const file = req.file;

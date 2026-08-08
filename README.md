@@ -88,17 +88,44 @@ window stays open so new conversations can be started in development.
 
 ## Attachments
 
-**Sending attachments is off.** The composer is text-only on purpose: outbound
-files need durable object storage (S3 / Cloudflare R2 / Supabase Storage), and
-local disk is wiped on every redeploy on Render, Railway, and Fly. Turning it
-on without that would silently lose customers' files.
+Images, video, voice notes, and documents, both directions. Size caps mirror
+Meta's: image 5 MB, video and audio 16 MB, document 100 MB.
 
-Incoming attachments still render in the thread — images, video, audio, and
-document rows — so nothing breaks when a customer sends a photo.
+`STORAGE_DRIVER` decides where the bytes go:
 
-The upload endpoint and `media` table stay in place for when storage is wired:
-add an S3 driver behind `server/src/services/media.ts`, then restore the
-paperclip and mic buttons in `web/src/components/inbox/composer.tsx`.
+| Value | Behaviour |
+|-------|-----------|
+| `local` (default) | `server/.data/uploads/<company_id>/`. Development only — most hosts wipe the disk on redeploy and two instances cannot share it. |
+| `supabase` | Supabase Storage bucket. Survives deploys, works across instances. |
+
+Either way files are served only through `GET /api/media/:id`, scoped to the
+caller's company — another tenant's media id returns 404. Keep the Supabase
+bucket **private**; the API streams the bytes after checking the session, so a
+public bucket would hand out every customer's photos to anyone with the URL.
+
+Under `WHATSAPP_DRIVER=cloud`, sending uploads the bytes to Meta's `/media`
+endpoint first, then sends a message referencing the returned media id.
+
+## Supabase setup
+
+Supabase covers both the database and attachment storage.
+
+1. **Database** — Project Settings → Database → *Session pooler* connection
+   string (port 6543), into `DATABASE_URL`. Migrations run automatically on
+   boot.
+2. **Storage** — Storage → New bucket → name `attachments`, **not** public.
+3. **Keys** — Project Settings → API. Copy the project URL and the
+   `service_role` key:
+
+```
+STORAGE_DRIVER=supabase
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+SUPABASE_STORAGE_BUCKET=attachments
+```
+
+The `service_role` key bypasses row level security. It belongs on the server
+only — never in `NEXT_PUBLIC_*`, never in the browser bundle, never committed.
 
 ## Secrets at rest
 

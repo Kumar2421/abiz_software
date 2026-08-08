@@ -74,6 +74,14 @@ authRouter.post(
         [company!.id, DEFAULT_WELCOME],
       );
 
+      // Free trial starts the moment the account exists.
+      await tx.query(
+        `INSERT INTO subscriptions (company_id, status, trial_ends_at)
+         VALUES ($1, 'TRIAL', now() + ($2 || ' days')::interval)
+         ON CONFLICT (company_id) DO NOTHING`,
+        [company!.id, String(env.TRIAL_DAYS)],
+      );
+
       return created!;
     });
 

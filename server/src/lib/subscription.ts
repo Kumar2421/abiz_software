@@ -1,0 +1,34 @@
+import type { NextFunction, Request, Response } from "express";
+
+import { canSend, getSubscription } from "../services/billing.js";
+import { ApiError } from "./http.js";
+
+/**
+ * Blocks actions that cost money or leave the platform once a subscription has
+ * lapsed. Reading stays open on purpose: the owner can still see the inbox,
+ * contacts, and reminders, and the WhatsApp webhook is never gated — inbound
+ * customer messages must keep being stored, or messages that arrive during a
+ * lapse are lost for good.
+ */
+export async function requireActiveSubscription(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
+  try {
+    const subscription = await getSubscription(req.user!.companyId);
+    if (!canSend(subscription.status)) {
+      throw new ApiError(
+        402,
+        subscription.status === "EXPIRED"
+          ? "Your free trial has ended. Complete payment to send messages again."
+          : `Sending is disabled while the account is ${subscription.status}.`,
+        "subscription_required",
+        { status: subscription.status },
+      );
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+}

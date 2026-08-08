@@ -1,14 +1,23 @@
-# Netlify builds the frontend only. The Express + Socket.IO API cannot run
-# here (no long-running process) — deploy it to Render, Railway, or Fly and
-# point NEXT_PUBLIC_API_URL at it.
+# One deploy: the Next.js frontend plus the Express API as a single function.
+# Both are served from the same origin, so the session cookie stays first-party
+# and there is no CORS preflight.
 
 [build]
-  base = "web"
-  command = "npm run build"
-  publish = ".next"
+  command = "npm --prefix server ci && npm --prefix web ci && npm --prefix web run build"
+  publish = "web/.next"
+  # Lives under server/ so its imports resolve against server/node_modules.
+  functions = "server/netlify/functions"
 
 [build.environment]
   NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+  # The handler imports TypeScript straight out of server/src.
+  included_files = ["server/src/**"]
+  # PGlite ships a large wasm payload and is only reachable when DATABASE_URL
+  # is unset, which never happens here. Keep it out of the bundle.
+  external_node_modules = ["@electric-sql/pglite"]
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -46,6 +46,8 @@ export function ChatPane({
   sendWindowOpen,
   demoMode,
   onSend,
+  onSendAttachment,
+  onRefresh,
   onToggleContact,
   onArchive,
   onBack,
@@ -57,6 +59,8 @@ export function ChatPane({
   /** True when WHATSAPP_DRIVER=mock: nothing reaches a real phone. */
   demoMode: boolean;
   onSend: (body: string) => void;
+  onSendAttachment: (file: File | Blob, caption?: string) => Promise<void>;
+  onRefresh?: () => void;
   onToggleContact: () => void;
   onArchive?: () => void;
   onBack?: () => void;
@@ -111,6 +115,7 @@ export function ChatPane({
             <SimulateInboundDialog
               phone={conversation.contact.phone}
               name={conversation.contact.name}
+              onDelivered={onRefresh}
             />
           )}
 
@@ -181,7 +186,11 @@ export function ChatPane({
         </p>
       )}
 
-      <Composer onSend={onSend} disabled={!sendWindowOpen} />
+      <Composer
+        onSend={onSend}
+        onSendAttachment={onSendAttachment}
+        disabled={!sendWindowOpen}
+      />
     </section>
   );
 }

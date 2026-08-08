@@ -4,7 +4,6 @@ import { decryptSecret } from "../lib/crypto.js";
 import { ApiError } from "../lib/http.js";
 import { normalizePhone } from "../lib/phone.js";
 import { getWhatsAppProvider } from "../providers/whatsapp.js";
-import { emitToCompany } from "../realtime.js";
 import {
   CONVERSATION_SELECT,
   MESSAGE_FROM,
@@ -138,7 +137,6 @@ export async function markConversationRead(
   );
   const row = await requireConversation(companyId, conversationId);
   const conversation = toConversation(row);
-  emitToCompany(companyId, "conversation:updated", conversation);
   return conversation;
 }
 
@@ -154,7 +152,6 @@ export async function setArchived(
   const conversation = toConversation(
     await requireConversation(companyId, conversationId),
   );
-  emitToCompany(companyId, "conversation:updated", conversation);
   return conversation;
 }
 
@@ -295,7 +292,6 @@ export async function sendMessage(
     body,
     status: "pending",
   });
-  emitToCompany(companyId, "message:new", toMessage(pending));
 
   const account = await accountFor(companyId);
   const result = await getWhatsAppProvider().send({
@@ -330,12 +326,6 @@ export async function sendMessage(
   }
 
   const message = toMessage(updated);
-  emitToCompany(companyId, "message:status", message);
-  emitToCompany(
-    companyId,
-    "conversation:updated",
-    toConversation(await requireConversation(companyId, conversationId)),
-  );
 
   return message;
 }
@@ -378,7 +368,6 @@ export async function sendMediaMessage(params: {
     messageType: kind,
     mediaId: stored.id,
   });
-  emitToCompany(params.companyId, "message:new", toMessage(pending));
 
   const account = await accountFor(params.companyId);
   const result = await getWhatsAppProvider().sendMedia({
@@ -415,14 +404,6 @@ export async function sendMediaMessage(params: {
   }
 
   const message = toMessage(updated);
-  emitToCompany(params.companyId, "message:status", message);
-  emitToCompany(
-    params.companyId,
-    "conversation:updated",
-    toConversation(
-      await requireConversation(params.companyId, params.conversationId),
-    ),
-  );
 
   return message;
 }
@@ -464,12 +445,6 @@ export async function receiveMessage(params: {
     markInbound: true,
   });
 
-  emitToCompany(params.companyId, "message:new", toMessage(inbound));
-  emitToCompany(
-    params.companyId,
-    "conversation:updated",
-    toConversation(await requireConversation(params.companyId, conversation.id)),
-  );
 
   await maybeSendWelcome(params.companyId, conversation.id);
 
@@ -528,7 +503,6 @@ export async function applyStatusUpdate(
   if (!updated) return null;
 
   const message = toMessage(await loadMessage(updated.id));
-  emitToCompany(companyId, "message:status", message);
   return message;
 }
 

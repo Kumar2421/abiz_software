@@ -26,6 +26,8 @@ mediaRouter.get(
     // Private: the response depends on the session cookie.
     res.setHeader("Cache-Control", "private, max-age=86400");
 
-    openMedia(row).pipe(res);
+    const stream = await openMedia(row);
+    stream.on("error", () => res.destroy());
+    stream.pipe(res);
   }),
 );

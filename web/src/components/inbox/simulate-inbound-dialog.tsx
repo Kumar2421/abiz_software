@@ -27,9 +27,11 @@ import { formatPhone } from "@/lib/format";
 export function SimulateInboundDialog({
   phone,
   name,
+  onDelivered,
 }: {
   phone: string;
   name: string;
+  onDelivered?: () => void;
 }) {
   const [open, setOpen] = React.useState(false);
   const [body, setBody] = React.useState("");
@@ -42,6 +44,7 @@ export function SimulateInboundDialog({
       await api.simulateInbound({ phone, body, name });
       setBody("");
       setOpen(false);
+      onDelivered?.();
     } catch (error) {
       toast.error(
         error instanceof ApiError ? error.message : "Could not deliver reply",

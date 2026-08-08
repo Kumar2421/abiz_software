@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,6 +13,9 @@ import {
 import { toast } from "sonner";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
+import { CheckoutPanel } from "@/components/billing/checkout-panel";
+import { formatMoney } from "@/components/ui/modern-payment-form";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,7 +24,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, api, type SettingsPayload } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  type PaymentRecord,
+  type SettingsPayload,
+} from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 
 function PasswordInput(props: React.ComponentProps<typeof Input>) {
@@ -119,8 +127,110 @@ function ConnectionNotice({
   );
 }
 
+/** Plan, payment, and receipts. */
+function BillingTab() {
+  const [payments, setPayments] = React.useState<PaymentRecord[] | null>(null);
+
+  const loadPayments = React.useCallback(async () => {
+    try {
+      const { payments: rows } = await api.payments();
+      setPayments(rows);
+    } catch {
+      setPayments([]);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { payments: rows } = await api.payments();
+        if (!cancelled) setPayments(rows);
+      } catch {
+        if (!cancelled) setPayments([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <CheckoutPanel onActivated={loadPayments} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Payment history</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {payments === null ? (
+            <Skeleton className="h-16 w-full" />
+          ) : payments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No payments yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 font-medium">Date</th>
+                    <th className="py-2 font-medium">Amount</th>
+                    <th className="py-2 font-medium">Status</th>
+                    <th className="py-2 font-medium">Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payments.map((payment) => (
+                    <tr key={payment.orderId} className="border-b last:border-0">
+                      <td className="py-2">
+                        {new Date(payment.createdAt).toLocaleDateString(
+                          undefined,
+                          { day: "numeric", month: "short", year: "numeric" },
+                        )}
+                      </td>
+                      <td className="py-2 tabular-nums">
+                        {formatMoney(payment.amountPaise, payment.currency)}
+                      </td>
+                      <td className="py-2">
+                        <Badge
+                          variant={
+                            payment.status === "captured"
+                              ? "outline"
+                              : payment.status === "failed"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                        >
+                          {payment.status}
+                        </Badge>
+                      </td>
+                      <td className="py-2 font-mono text-xs text-muted-foreground">
+                        {payment.paymentId ?? payment.orderId}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
+  return (
+    <React.Suspense fallback={null}>
+      <SettingsView />
+    </React.Suspense>
+  );
+}
+
+function SettingsView() {
   const router = useRouter();
+  // Deep link from the subscription banner: /settings?tab=billing
+  const initialTab = useSearchParams().get("tab") ?? "whatsapp";
   const [data, setData] = React.useState<SettingsPayload | null>(null);
   const [saving, setSaving] = React.useState<string | null>(null);
   const [issues, setIssues] = React.useState<Record<string, string>>({});
@@ -195,12 +305,17 @@ export default function SettingsPage() {
         </Button>
       </header>
 
-      <Tabs defaultValue="whatsapp" className="max-w-3xl">
+      <Tabs defaultValue={initialTab} className="max-w-3xl">
         <TabsList>
           <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
           <TabsTrigger value="welcome">Welcome message</TabsTrigger>
+          <TabsTrigger value="billing">Billing</TabsTrigger>
           <TabsTrigger value="profile">Profile</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="billing">
+          <BillingTab />
+        </TabsContent>
 
         {/* ---------------- WhatsApp ---------------- */}
         <TabsContent value="whatsapp">

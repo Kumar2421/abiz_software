@@ -1,8 +1,9 @@
 "use client";
 
-import { CornerUpLeft } from "lucide-react";
+import { CornerUpLeft, RefreshCw } from "lucide-react";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { initials, shortRelative } from "@/lib/format";
@@ -82,6 +83,7 @@ export function ConversationList({
   conversations,
   selectedId,
   onSelect,
+  onRefresh,
   action,
   loading,
   className,
@@ -89,6 +91,7 @@ export function ConversationList({
   conversations: Conversation[];
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onRefresh?: () => void;
   /** Slot for the "new chat" trigger in the list header. */
   action?: React.ReactNode;
   loading?: boolean;
@@ -101,6 +104,16 @@ export function ConversationList({
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
           {conversations.length}
         </span>
+        {onRefresh && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onRefresh}
+            aria-label="Check for new messages"
+          >
+            <RefreshCw className="size-4" />
+          </Button>
+        )}
         {action}
       </div>
 
