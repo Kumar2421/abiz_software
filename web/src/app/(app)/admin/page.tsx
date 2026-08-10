@@ -19,6 +19,7 @@ import {
   type AdminWebhookLog,
 } from "@/lib/api";
 import { formatMoney } from "@/components/ui/modern-payment-form";
+import { TableSkeleton } from "@/components/skeletons";
 import { formatPhone } from "@/lib/format";
 
 const stamp = (value: string) =>
@@ -121,6 +122,8 @@ export default function AdminPage() {
       toast.error(error instanceof ApiError ? error.message : "Delete failed");
     }
   };
+
+  if (users === null) return <TableSkeleton rows={8} />;
 
   return (
     <div className="flex-1 overflow-y-auto p-6">

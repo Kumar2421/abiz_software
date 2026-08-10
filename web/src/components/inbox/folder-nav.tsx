@@ -8,11 +8,11 @@ import { formatPhone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { InboxFolder, WhatsAppAccount } from "@/lib/types";
 
-const FOLDERS: { key: InboxFolder; label: string; icon: typeof Inbox }[] = [
+const FOLDERS = [
   { key: "all", label: "All", icon: Inbox },
   { key: "unread", label: "Unread", icon: MailOpen },
   { key: "archived", label: "Archived", icon: Archive },
-];
+] as const;
 
 export function FolderNav({
   account,

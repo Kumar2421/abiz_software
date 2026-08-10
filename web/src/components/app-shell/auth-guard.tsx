@@ -51,8 +51,17 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (!session) {
     return (
-      <div className="flex flex-1 items-center justify-center p-10">
-        <Skeleton className="h-8 w-40" />
+      <div className="flex h-svh w-full overflow-hidden bg-shell">
+        {/* Mirrors the icon rail so the shell does not shift when it appears. */}
+        <div className="flex w-16 shrink-0 flex-col items-center gap-2 border-r bg-card py-3">
+          <Skeleton className="size-9 rounded-lg" />
+          {[0, 1, 2].map((item) => (
+            <Skeleton key={item} className="size-10 rounded-lg" />
+          ))}
+        </div>
+        <div className="flex-1 p-6">
+          <Skeleton className="h-8 w-48" />
+        </div>
       </div>
     );
   }

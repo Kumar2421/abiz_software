@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { useSession } from "@/components/app-shell/auth-guard";
+import { AppearanceTab } from "@/components/settings/appearance-tab";
 import { CheckoutPanel } from "@/components/billing/checkout-panel";
 import { formatMoney } from "@/components/ui/modern-payment-form";
 import { Badge } from "@/components/ui/badge";
@@ -25,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { SettingsSkeleton } from "@/components/skeletons";
 import {
   ApiError,
   api,
@@ -32,6 +34,7 @@ import {
   type SettingsPayload,
 } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 
 function PasswordInput(props: React.ComponentProps<typeof Input>) {
   const [visible, setVisible] = React.useState(false);
@@ -234,6 +237,7 @@ function SettingsView() {
   const initialTab = useSearchParams().get("tab") ?? "whatsapp";
   // Platform admins have no subscription of their own.
   const billable = useSession().user.role !== "admin";
+  const t = useT();
   const [data, setData] = React.useState<SettingsPayload | null>(null);
   const [saving, setSaving] = React.useState<string | null>(null);
   const [issues, setIssues] = React.useState<Record<string, string>>({});
@@ -275,14 +279,7 @@ function SettingsView() {
     }
   };
 
-  if (!data) {
-    return (
-      <div className="flex-1 space-y-4 p-6">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-64 w-full max-w-3xl" />
-      </div>
-    );
-  }
+  if (!data) return <SettingsSkeleton />;
 
   const resolve = (body: string) =>
     body
@@ -293,7 +290,7 @@ function SettingsView() {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <header className="mb-6 flex items-center gap-3">
-        <h1 className="text-xl font-semibold">Settings</h1>
+        <h1 className="text-xl font-semibold">{t("settings.title")}</h1>
         <Button
           variant="outline"
           size="sm"
@@ -304,17 +301,26 @@ function SettingsView() {
           }}
         >
           <LogOut className="size-4" />
-          Sign out
+          {t("settings.signOut")}
         </Button>
       </header>
 
       <Tabs defaultValue={initialTab} className="max-w-3xl">
         <TabsList>
-          <TabsTrigger value="whatsapp">WhatsApp</TabsTrigger>
-          <TabsTrigger value="welcome">Welcome message</TabsTrigger>
-          {billable && <TabsTrigger value="billing">Billing</TabsTrigger>}
-          <TabsTrigger value="profile">Profile</TabsTrigger>
+          <TabsTrigger value="whatsapp">{t("settings.whatsapp")}</TabsTrigger>
+          <TabsTrigger value="welcome">{t("settings.welcome")}</TabsTrigger>
+          {billable && (
+            <TabsTrigger value="billing">{t("settings.billing")}</TabsTrigger>
+          )}
+          <TabsTrigger value="appearance">
+            {t("settings.appearance")}
+          </TabsTrigger>
+          <TabsTrigger value="profile">{t("settings.profile")}</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="appearance">
+          <AppearanceTab />
+        </TabsContent>
 
         {billable && (
           <TabsContent value="billing">

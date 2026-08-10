@@ -12,8 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { FormSkeleton } from "@/components/skeletons";
 import { API_URL, ApiError, api, type SettingsPayload } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -125,14 +125,7 @@ export default function OnboardingPage() {
       .catch(() => setQr(null));
   }, [step, waLink]);
 
-  if (!data) {
-    return (
-      <div className="flex-1 space-y-4 p-6">
-        <Skeleton className="h-8 w-56" />
-        <Skeleton className="h-72 w-full max-w-2xl" />
-      </div>
-    );
-  }
+  if (!data) return <FormSkeleton />;
 
   const saveConnection = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

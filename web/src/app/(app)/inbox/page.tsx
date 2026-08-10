@@ -9,6 +9,7 @@ import { ContactDrawer } from "@/components/inbox/contact-drawer";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { FolderNav } from "@/components/inbox/folder-nav";
 import { NewChatDialog } from "@/components/inbox/new-chat-dialog";
+import { InboxSkeleton } from "@/components/skeletons";
 import { ApiError, api } from "@/lib/api";
 import type {
   Contact,
@@ -238,6 +239,9 @@ function InboxView() {
       toast.error("Could not archive conversation");
     }
   };
+
+  // First load only: later refreshes keep the current list on screen.
+  if (loading && conversations.length === 0) return <InboxSkeleton />;
 
   return (
     <>

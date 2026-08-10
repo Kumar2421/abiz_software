@@ -6,6 +6,7 @@ import { MessageSquareMore, Send, Users } from "lucide-react";
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DashboardSkeleton } from "@/components/skeletons";
 import { api } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 import type { DashboardStats, WhatsAppAccount } from "@/lib/types";
@@ -45,6 +46,8 @@ export default function DashboardPage() {
       icon: MessageSquareMore,
     },
   ];
+
+  if (!stats) return <DashboardSkeleton />;
 
   return (
     <div className="flex-1 overflow-y-auto p-6">

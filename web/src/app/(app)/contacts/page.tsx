@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
+import { TableSkeleton } from "@/components/skeletons";
 import { ApiError, api } from "@/lib/api";
 import { formatPhone, initials } from "@/lib/format";
 import type { Contact } from "@/lib/types";
@@ -204,6 +205,8 @@ export default function ContactsPage() {
       toast.error("Could not open chat");
     }
   };
+
+  if (contacts === null) return <TableSkeleton />;
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden p-6">

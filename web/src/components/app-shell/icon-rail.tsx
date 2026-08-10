@@ -21,20 +21,23 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSession } from "@/components/app-shell/auth-guard";
+import { ThemeToggle } from "@/components/app-shell/theme-toggle";
 import { initials } from "@/lib/format";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/inbox", label: "Inbox", icon: MessagesSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-];
+  { href: "/inbox", key: "nav.inbox", icon: MessagesSquare },
+  { href: "/contacts", key: "nav.contacts", icon: Users },
+  { href: "/dashboard", key: "nav.dashboard", icon: LayoutDashboard },
+] as const;
 
-const ADMIN_NAV = { href: "/admin", label: "Admin", icon: Shield };
+const ADMIN_NAV = { href: "/admin", key: "nav.admin", icon: Shield } as const;
 
 export function IconRail() {
   const pathname = usePathname();
   const { user } = useSession();
+  const t = useT();
 
   const nav = user.role === "admin" ? [...NAV, ADMIN_NAV] : NAV;
 
@@ -47,8 +50,9 @@ export function IconRail() {
         A
       </Link>
 
-      {nav.map(({ href, label, icon: Icon }) => {
+      {nav.map(({ href, key, icon: Icon }) => {
         const active = pathname.startsWith(href);
+        const label = t(key);
         return (
           <Tooltip key={href}>
             <TooltipTrigger asChild>
@@ -70,11 +74,13 @@ export function IconRail() {
       })}
 
       <div className="mt-auto flex flex-col items-center gap-1">
+        <ThemeToggle />
+
         <Tooltip>
           <TooltipTrigger asChild>
             <Link
               href="/settings"
-              aria-label="Settings"
+              aria-label={t("nav.settings")}
               className={cn(
                 "flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
                 pathname.startsWith("/settings") && "bg-selected text-primary",
@@ -83,7 +89,7 @@ export function IconRail() {
               <Settings className="size-5" />
             </Link>
           </TooltipTrigger>
-          <TooltipContent side="right">Settings</TooltipContent>
+          <TooltipContent side="right">{t("nav.settings")}</TooltipContent>
         </Tooltip>
 
         <Avatar className="size-8">
