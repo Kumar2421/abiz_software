@@ -33,6 +33,14 @@ const schema = z.object({
   // /api). "none" only when it is on another domain.
   COOKIE_SAMESITE: z.enum(["lax", "none"]).default("lax"),
 
+  // Whether the session cookie carries the Secure flag. Defaults to on in
+  // production. Browsers reject Secure cookies over plain http, so running a
+  // production build against http://localhost needs this set to false.
+  COOKIE_SECURE: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === "true")),
+
   // Where chat attachments live.
   //   local    - server/.data/uploads, development only (wiped on redeploy)
   //   supabase - Supabase Storage bucket, survives deploys and scales out
@@ -53,6 +61,14 @@ const schema = z.object({
 
   // Free trial length for a brand-new account.
   TRIAL_DAYS: z.coerce.number().int().min(0).default(1),
+
+  // When false, checkout is refused while the current trial or paid term is
+  // still running — a customer may only pay once it has ended. Set true to
+  // let people buy early instead of waiting for expiry.
+  ALLOW_EARLY_PAYMENT: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
 
   // Shared secret for POST /api/automation/cron/run-scheduled. Without it the
   // endpoint refuses to run, so reminders never fire from an unguarded call.

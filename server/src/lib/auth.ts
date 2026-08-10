@@ -50,7 +50,10 @@ export function setAuthCookie(res: Response, token: string) {
     // (Netlify function under /api). Set COOKIE_SAMESITE=none only if the API
     // lives on a different domain — Safari blocks those cookies by default.
     sameSite: env.COOKIE_SAMESITE,
-    secure: env.COOKIE_SAMESITE === "none" || env.NODE_ENV === "production",
+    // SameSite=None is only valid alongside Secure, so it forces the flag on.
+    secure:
+      env.COOKIE_SAMESITE === "none" ||
+      (env.COOKIE_SECURE ?? env.NODE_ENV === "production"),
     maxAge: TOKEN_TTL_SECONDS * 1000,
     path: "/",
   });

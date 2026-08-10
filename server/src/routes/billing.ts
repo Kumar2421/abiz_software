@@ -11,6 +11,7 @@ import {
   markFailed,
   markPaid,
   paymentHistory,
+  paymentWindow,
   razorpayConfigured,
   verifyCheckout,
   webhookSignatureValid,
@@ -123,6 +124,9 @@ billingRouter.get(
       // Platform admins run Abiz rather than subscribe to it, so the UI hides
       // billing for them instead of asking the operator to pay.
       billable: req.user!.role !== "admin",
+      // Lets the UI disable the pay button with a reason, instead of letting
+      // the customer click through to a 409.
+      paymentWindow: paymentWindow(subscription),
     });
   }),
 );

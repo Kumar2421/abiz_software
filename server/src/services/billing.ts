@@ -124,6 +124,79 @@ export function canSend(status: SubscriptionStatus): boolean {
   return status === "TRIAL" || status === "ACTIVE";
 }
 
+export interface PaymentWindow {
+  open: boolean;
+  /** Why it is closed, shown to the customer. */
+  reason?: string;
+  /** When it opens — the end of the current trial or paid term. */
+  opensAt?: string | null;
+}
+
+const whenText = (iso: string) =>
+  new Date(iso).toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/**
+ * Decides whether checkout may be started.
+ *
+ * A lifetime purchase can only be made once, so an already-ACTIVE account is
+ * always refused. Beyond that, ALLOW_EARLY_PAYMENT=false means a customer must
+ * wait until their current trial or paid term has actually ended before
+ * paying, rather than buying part-way through one.
+ */
+export function paymentWindow(subscription: {
+  status: SubscriptionStatus;
+  trialEndsAt: string | null;
+  expiresAt: string | null;
+}): PaymentWindow {
+  // Lifetime plans never lapse, so paying again would just take money twice.
+  if (subscription.status === "ACTIVE" && !subscription.expiresAt) {
+    return { open: false, reason: "This account is already active." };
+  }
+
+  if (subscription.status === "CANCELLED" || subscription.status === "SUSPENDED") {
+    return {
+      open: false,
+      reason: "This account is suspended. Contact support before paying.",
+    };
+  }
+
+  if (env.ALLOW_EARLY_PAYMENT) return { open: true };
+
+  const now = Date.now();
+
+  if (
+    subscription.status === "TRIAL" &&
+    subscription.trialEndsAt &&
+    new Date(subscription.trialEndsAt).getTime() > now
+  ) {
+    return {
+      open: false,
+      reason: `Your free trial runs until ${whenText(subscription.trialEndsAt)}. Payment opens when it ends.`,
+      opensAt: subscription.trialEndsAt,
+    };
+  }
+
+  if (
+    subscription.status === "ACTIVE" &&
+    subscription.expiresAt &&
+    new Date(subscription.expiresAt).getTime() > now
+  ) {
+    return {
+      open: false,
+      reason: `Your current plan runs until ${whenText(subscription.expiresAt)}. Renewal opens when it ends.`,
+      opensAt: subscription.expiresAt,
+    };
+  }
+
+  return { open: true };
+}
+
 /* ------------------------------------------------------------------ */
 /* Razorpay                                                            */
 /* ------------------------------------------------------------------ */
@@ -147,9 +220,9 @@ export async function createOrder(companyId: string) {
 
   const plan = await activePlan();
   const subscription = await getSubscription(companyId);
-  if (subscription.status === "ACTIVE") {
-    throw ApiError.conflict("This account is already active");
-  }
+
+  const gate = paymentWindow(subscription);
+  if (!gate.open) throw new ApiError(409, gate.reason!, "payment_not_due");
 
   const response = await fetch(`${RAZORPAY_API}/orders`, {
     method: "POST",

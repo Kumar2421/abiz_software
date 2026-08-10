@@ -1,23 +1,23 @@
-# One deploy: the Next.js frontend plus the Express API as a single function.
-# Both are served from the same origin, so the session cookie stays first-party
-# and there is no CORS preflight.
+# The frontend is a fully static export — every route is client-rendered behind
+# a session cookie and the API is a separate Express service. Serving the
+# exported HTML directly means no Next.js runtime on Netlify.
 
 [build]
-  command = "npm --prefix server ci && npm --prefix web ci && npm --prefix web run build"
-  publish = "web/.next"
-  # Lives under server/ so its imports resolve against server/node_modules.
-  functions = "server/netlify/functions"
+  # NODE_ENV is forced to production for the build step only. `npm ci` must run
+  # WITHOUT it: with NODE_ENV=production npm skips devDependencies, and
+  # typescript/tailwind live there. A stray NODE_ENV=development makes Next
+  # build React in dev mode, which crashes prerendering /_global-error.
+  # --include=dev is explicit insurance: if NODE_ENV=production is set as a
+  # site variable, npm would otherwise skip devDependencies and the build dies
+  # on "Cannot find module '@tailwindcss/postcss'".
+  command = "npm --prefix web ci --include=dev && NODE_ENV=production npm --prefix web run build"
+  publish = "web/out"
 
 [build.environment]
   NODE_VERSION = "22"
 
-[functions]
-  node_bundler = "esbuild"
-  # The handler imports TypeScript straight out of server/src.
-  included_files = ["server/src/**"]
-  # PGlite ships a large wasm payload and is only reachable when DATABASE_URL
-  # is unset, which never happens here. Keep it out of the bundle.
-  external_node_modules = ["@electric-sql/pglite"]
-
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# Unknown paths get the exported 404 page rather than a bare server error.
+[[redirects]]
+  from = "/*"
+  to = "/404.html"
+  status = 404
