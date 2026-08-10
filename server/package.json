@@ -4,12 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "dev": "node scripts/gen-migrations.mjs && tsx watch src/index.ts",
+    "build": "node scripts/gen-migrations.mjs && tsc -p tsconfig.json",
     "start": "node dist/index.js",
-    "migrate": "tsx src/db/migrate.ts",
-    "seed": "tsx src/db/seed.ts",
-    "typecheck": "tsc --noEmit"
+    "migrate": "node scripts/gen-migrations.mjs && tsx src/db/migrate.ts",
+    "seed": "node scripts/gen-migrations.mjs && tsx src/db/seed.ts",
+    "typecheck": "tsc --noEmit",
+    "gen:migrations": "node scripts/gen-migrations.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.3.12",

@@ -1,22 +1,53 @@
-# The frontend is a fully static export — every route is client-rendered behind
-# a session cookie and the API is a separate Express service. Serving the
-# exported HTML directly means no Next.js runtime on Netlify.
+# One Netlify deploy serves both halves of Abiz:
+#   web/out                      static export of the Next.js frontend
+#   server/netlify/functions/api  the whole Express API, as one function
+#
+# Same origin for both means the session cookie is first-party (Safari blocks
+# third-party cookies) and there is no CORS preflight on every request.
 
 [build]
-  # NODE_ENV is forced to production for the build step only. `npm ci` must run
-  # WITHOUT it: with NODE_ENV=production npm skips devDependencies, and
-  # typescript/tailwind live there. A stray NODE_ENV=development makes Next
-  # build React in dev mode, which crashes prerendering /_global-error.
-  # --include=dev is explicit insurance: if NODE_ENV=production is set as a
-  # site variable, npm would otherwise skip devDependencies and the build dies
-  # on "Cannot find module '@tailwindcss/postcss'".
-  command = "npm --prefix web ci --include=dev && NODE_ENV=production npm --prefix web run build"
+  # `npm ci` must run WITHOUT NODE_ENV=production or npm skips devDependencies,
+  # where TypeScript and Tailwind live — hence --include=dev. The Next build
+  # then runs in production mode, because a stray NODE_ENV=development makes it
+  # build React in dev mode and crash prerendering /_global-error.
+  command = """
+    npm --prefix server ci --include=dev && \
+    npm --prefix server run build && \
+    npm --prefix web ci --include=dev && \
+    NODE_ENV=production npm --prefix web run build
+  """
   publish = "web/out"
+  functions = "server/netlify/functions"
 
 [build.environment]
   NODE_VERSION = "22"
+  # Empty means "same origin": the API is served from /api on this very domain
+  # by the function below. Do not set this in the Netlify UI unless the API is
+  # moved to a separate host — a stale value gets compiled into the bundle.
+  NEXT_PUBLIC_API_URL = ""
 
-# Unknown paths get the exported 404 page rather than a bare server error.
+[functions]
+  node_bundler = "esbuild"
+  # PGlite carries a large wasm payload and is only reachable when DATABASE_URL
+  # is unset, which never happens in production. Keep it out of the bundle.
+  external_node_modules = ["@electric-sql/pglite"]
+
+# API and health check are served by the function. The extra /api in the target
+# keeps Express seeing its own route paths after the function prefix is
+# stripped in the handler.
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/api/health"
+  status = 200
+  force = true
+
+# Anything else that is not a real file gets the exported 404 page.
 [[redirects]]
   from = "/*"
   to = "/404.html"

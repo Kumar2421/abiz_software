@@ -1,14 +1,15 @@
-import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { getDb } from "./index.js";
+import { migrations } from "./migrations.generated.js";
 
-const migrationsDir = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "migrations",
-);
-
+/**
+ * Applies any migration not yet recorded in `schema_migrations`.
+ *
+ * The SQL is embedded at build time rather than read from disk, so this
+ * behaves the same under tsx, from dist/, and inside a bundled serverless
+ * function — none of which reliably ship the .sql directory.
+ */
 export async function runMigrations(): Promise<string[]> {
   const db = await getDb();
 
@@ -25,17 +26,14 @@ export async function runMigrations(): Promise<string[]> {
     ).map((row) => row.name),
   );
 
-  const files = (await readdir(migrationsDir))
-    .filter((file) => file.endsWith(".sql"))
-    .sort();
-
   const ran: string[] = [];
-  for (const file of files) {
-    if (applied.has(file)) continue;
-    const sql = await readFile(path.join(migrationsDir, file), "utf8");
-    await db.exec(sql);
-    await db.query("INSERT INTO schema_migrations (name) VALUES ($1)", [file]);
-    ran.push(file);
+  for (const migration of migrations) {
+    if (applied.has(migration.name)) continue;
+    await db.exec(migration.sql);
+    await db.query("INSERT INTO schema_migrations (name) VALUES ($1)", [
+      migration.name,
+    ]);
+    ran.push(migration.name);
   }
 
   return ran;

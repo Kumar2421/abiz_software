@@ -3,3 +3,6 @@ dist/
 .env
 .data/
 *.log
+
+# Generated from src/db/migrations/*.sql at build time.
+src/db/migrations.generated.ts
