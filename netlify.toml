@@ -32,20 +32,9 @@
   # is unset, which never happens in production. Keep it out of the bundle.
   external_node_modules = ["@electric-sql/pglite"]
 
-# API and health check are served by the function. The extra /api in the target
-# keeps Express seeing its own route paths after the function prefix is
-# stripped in the handler.
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/api/:splat"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/health"
-  to = "/.netlify/functions/api/health"
-  status = 200
-  force = true
+# /api/* and /health are claimed by the function itself, via `export const
+# config = { path: [...] }` in api.mjs. Declaring redirects here as well would
+# rewrite the URL and hide the real path from Express.
 
 # Anything else that is not a real file gets the exported 404 page.
 [[redirects]]

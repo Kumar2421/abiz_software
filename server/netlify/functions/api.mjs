@@ -1,35 +1,75 @@
 import serverless from "serverless-http";
 
-// Imports the compiled output, not src: the build runs `tsc` first, so the
-// bundler never has to resolve TypeScript or NodeNext ".js" import specifiers.
+// Imports compiled output, not src: the build runs `tsc` first, so the bundler
+// never has to resolve TypeScript or NodeNext ".js" import specifiers.
 import { app, ready } from "../../dist/app.js";
 
 /**
  * Serves the whole Express API from one Netlify Function.
  *
- * netlify.toml rewrites /api/* and /health to this function, so the browser
- * talks to the same origin as the app: the session cookie stays first-party
- * (Safari blocks third-party cookies) and there is no CORS preflight.
+ * Uses Netlify's native (Request -> Response) signature with a default export.
+ * The Lambda-style `export const handler` form makes Netlify emit a CommonJS
+ * wrapper that `require()`s this ESM file, which fails with ERR_REQUIRE_ESM.
  *
- * This is a Lambda-style ("v1") handler because that is the shape
- * serverless-http produces. Netlify's newer Request/Response signature would
- * need a separate adapter.
+ * serverless-http still speaks the Lambda event shape, so the Request is
+ * translated into one here and its result translated back.
+ *
+ * Routing lives in `export const config` below, so the original path reaches
+ * Express unchanged — no rewrite prefix to strip.
  */
 
-const FUNCTION_PREFIX = "/.netlify/functions/api";
+const toLambdaEvent = async (request) => {
+  const url = new URL(request.url);
+  const hasBody = !["GET", "HEAD"].includes(request.method);
 
-const wrapped = serverless(app);
+  // Express needs the raw bytes for the Razorpay webhook signature, and
+  // base64 keeps binary uploads intact.
+  const raw = hasBody ? Buffer.from(await request.arrayBuffer()) : null;
 
-export const handler = async (event, context) => {
+  const queryStringParameters = {};
+  for (const [key, value] of url.searchParams) queryStringParameters[key] = value;
+
+  return {
+    path: url.pathname,
+    httpMethod: request.method,
+    headers: Object.fromEntries(request.headers),
+    queryStringParameters,
+    body: raw ? raw.toString("base64") : null,
+    isBase64Encoded: Boolean(raw),
+  };
+};
+
+const toResponse = (result) => {
+  const headers = new Headers();
+
+  for (const [key, value] of Object.entries(result.headers ?? {})) {
+    if (value !== undefined) headers.set(key, String(value));
+  }
+
+  // Several Set-Cookie headers only survive as separate entries.
+  for (const [key, values] of Object.entries(result.multiValueHeaders ?? {})) {
+    if (!Array.isArray(values)) continue;
+    headers.delete(key);
+    for (const value of values) headers.append(key, String(value));
+  }
+
+  const body = result.isBase64Encoded
+    ? Buffer.from(result.body ?? "", "base64")
+    : (result.body ?? "");
+
+  return new Response(body, { status: result.statusCode ?? 200, headers });
+};
+
+const wrapped = serverless(app, { binary: true });
+
+export default async (request) => {
   // Applies pending migrations once per cold start; a no-op when warm.
   await ready();
 
-  // Netlify reports the rewritten path, which still carries the function
-  // prefix. Express only knows routes like /api/auth/login, so strip it.
-  const path = event.path ?? "/";
-  const routed = path.startsWith(FUNCTION_PREFIX)
-    ? path.slice(FUNCTION_PREFIX.length) || "/"
-    : path;
+  const result = await wrapped(await toLambdaEvent(request), {});
+  return toResponse(result);
+};
 
-  return wrapped({ ...event, path: routed }, context);
+export const config = {
+  path: ["/api/*", "/health"],
 };
