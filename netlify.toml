@@ -26,6 +26,14 @@
   # moved to a separate host — a stale value gets compiled into the bundle.
   NEXT_PUBLIC_API_URL = ""
 
+  # These are configuration, not credentials, and their values are ordinary
+  # words ("attachments", "v21.0", "supabase") that appear throughout the code
+  # and UI copy — the scanner flags every occurrence. Scanning stays ON for
+  # everything else, which is what actually matters: DATABASE_URL, JWT_SECRET,
+  # ENCRYPTION_KEY, SUPABASE_SERVICE_ROLE_KEY and the Razorpay keys are still
+  # checked, and the build must keep failing if one of those ever leaks.
+  SECRETS_SCAN_OMIT_KEYS = "SUPABASE_STORAGE_BUCKET,META_GRAPH_VERSION,STORAGE_DRIVER,WHATSAPP_DRIVER,COOKIE_SAMESITE,RESET_TOKEN_TTL_MINUTES,CLIENT_ORIGIN,SUPABASE_URL,NEXT_PUBLIC_API_URL"
+
 [functions]
   node_bundler = "esbuild"
   # PGlite carries a large wasm payload and is only reachable when DATABASE_URL
