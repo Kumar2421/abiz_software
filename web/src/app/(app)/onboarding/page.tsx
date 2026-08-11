@@ -217,7 +217,7 @@ export default function OnboardingPage() {
                 <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
                   {trialActive
                     ? "Continue on the free trial"
-                    : "Set up WhatsApp first"}
+                    : "Set up WhatsApp first — pay later"}
                 </Button>
               </div>
             </CardContent>

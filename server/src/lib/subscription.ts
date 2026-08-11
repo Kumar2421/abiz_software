@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { canSend, getSubscription } from "../services/billing.js";
+import { canSend, getSubscription, trialDays } from "../services/billing.js";
 import { ApiError } from "./http.js";
 
 /**
@@ -25,10 +25,17 @@ export async function requireActiveSubscription(
 
     const subscription = await getSubscription(req.user!.companyId);
     if (!canSend(subscription.status)) {
+      // With TRIAL_DAYS=0 the account was never on a trial, so saying one
+      // "ended" would just confuse someone who has not paid yet.
+      const expiredMessage =
+        trialDays() > 0
+          ? "Your free trial has ended. Complete payment to send messages again."
+          : "Activate your account to start sending messages.";
+
       throw new ApiError(
         402,
         subscription.status === "EXPIRED"
-          ? "Your free trial has ended. Complete payment to send messages again."
+          ? expiredMessage
           : `Sending is disabled while the account is ${subscription.status}.`,
         "subscription_required",
         { status: subscription.status },

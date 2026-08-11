@@ -13,6 +13,7 @@ import {
   paymentHistory,
   paymentWindow,
   razorpayConfigured,
+  trialDays,
   verifyCheckout,
   webhookSignatureValid,
 } from "../services/billing.js";
@@ -127,6 +128,8 @@ billingRouter.get(
       // Lets the UI disable the pay button with a reason, instead of letting
       // the customer click through to a 409.
       paymentWindow: paymentWindow(subscription),
+      // 0 means pay upfront, so the UI must not mention a free trial.
+      trialDays: trialDays(),
     });
   }),
 );

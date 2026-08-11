@@ -44,7 +44,13 @@ export async function activePlan(): Promise<PlanRow> {
   return plan;
 }
 
-/** Called at registration so every company starts on the free trial. */
+/**
+ * Creates the subscription row at registration.
+ *
+ * With TRIAL_DAYS=0 the trial ends the instant it starts, so `getSubscription`
+ * settles the row to EXPIRED on the first read: the owner can see the
+ * dashboard but cannot send until they pay.
+ */
 export async function startTrial(companyId: string) {
   await query(
     `INSERT INTO subscriptions (company_id, status, trial_ends_at)
@@ -53,6 +59,9 @@ export async function startTrial(companyId: string) {
     [companyId, String(env.TRIAL_DAYS)],
   );
 }
+
+/** Zero means the product is pay-upfront rather than try-before-you-buy. */
+export const trialDays = () => env.TRIAL_DAYS;
 
 /**
  * Reads the stored row and settles any state that time alone decides — a trial

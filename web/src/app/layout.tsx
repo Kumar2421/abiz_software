@@ -19,6 +19,16 @@ export const metadata: Metadata = {
   title: "Abiz — WhatsApp Inbox",
   description:
     "Connect your WhatsApp Business number and manage customer chats in one place.",
+  // src/app/favicon.ico covers the browser tab on its own; these add the
+  // larger PNG for bookmarks and the iOS home screen, where the .ico entries
+  // (48px at most) would look soft.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/logo.png", type: "image/png", sizes: "256x256" },
+    ],
+    apple: [{ url: "/logo.png", sizes: "256x256" }],
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

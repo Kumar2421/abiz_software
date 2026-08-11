@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as THREE from "three";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -218,7 +219,6 @@ export interface ModernLoginSignupProps {
   /** Receives whatever is currently typed in the email field. */
   onForgotPassword?: (email: string) => void;
   brandName?: string;
-  brandInitials?: string;
   className?: string;
 }
 
@@ -230,7 +230,6 @@ export function ModernLoginSignup({
   onSocial,
   onForgotPassword,
   brandName = "Abiz",
-  brandInitials = "AB",
   className,
 }: ModernLoginSignupProps) {
   const [uncontrolledMode, setUncontrolledMode] =
@@ -284,8 +283,8 @@ export function ModernLoginSignup({
 
       <div className="relative z-[2] w-full max-w-100 rounded-xl border border-white/10 bg-neutral-950 p-8 shadow-[0_10px_40px_rgba(0,0,0,0.8)]">
         <div className="flex flex-col items-center text-center">
-          <div className="mb-3 flex size-11 items-center justify-center rounded-full border border-white/15 bg-neutral-900 text-lg font-bold">
-            {brandInitials}
+          <div className="mb-3 flex size-14 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/5">
+            <BrandLogo size={40} priority />
           </div>
 
           <h1 className="text-xl font-semibold tracking-tight">
@@ -344,11 +343,7 @@ export function ModernLoginSignup({
               <button
                 type="button"
                 onClick={() => onForgotPassword?.(email)}
-                disabled={!email.trim()}
-                title={
-                  email.trim() ? undefined : "Enter your email address first"
-                }
-                className="-mt-0.5 self-end text-xs text-neutral-400 hover:text-white disabled:opacity-50"
+                className="-mt-0.5 self-end text-xs text-neutral-400 hover:text-white"
               >
                 Forgot password?
               </button>

@@ -21,6 +21,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useSession } from "@/components/app-shell/auth-guard";
+import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/app-shell/theme-toggle";
 import { initials } from "@/lib/format";
 import { useT } from "@/lib/i18n";
@@ -45,9 +46,10 @@ export function IconRail() {
     <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r bg-card py-3">
       <Link
         href="/inbox"
-        className="mb-3 flex size-9 items-center justify-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+        aria-label="Abiz"
+        className="mb-3 flex size-9 items-center justify-center overflow-hidden rounded-lg border bg-card"
       >
-        A
+        <BrandLogo size={28} />
       </Link>
 
       {nav.map(({ href, key, icon: Icon }) => {

@@ -53,22 +53,11 @@ function LoginView() {
     }
   };
 
-  const handleForgot = async (email: string) => {
-    try {
-      const result = await api.forgotPassword(email);
-      toast.success(result.message);
-
-      // In development the API hands the link back so the flow is testable
-      // without an email provider.
-      if (result.devResetUrl) {
-        const url = new URL(result.devResetUrl);
-        router.push(`${url.pathname}${url.search}`);
-      }
-    } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Could not start the reset",
-      );
-    }
+  // The reset page asks for the email itself, so this only needs to send the
+  // user there — prefilling what they already typed.
+  const handleForgot = (email: string) => {
+    const query = email.includes("@") ? `?email=${encodeURIComponent(email)}` : "";
+    router.push(`/reset-password${query}`);
   };
 
   return (

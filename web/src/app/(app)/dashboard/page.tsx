@@ -4,6 +4,7 @@ import * as React from "react";
 import { MessageSquareMore, Send, Users } from "lucide-react";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
+import { BrandLogo } from "@/components/brand-logo";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DashboardSkeleton } from "@/components/skeletons";
@@ -51,11 +52,16 @@ export default function DashboardPage() {
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
-      <header className="mb-6">
-        <h1 className="text-xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Overview of your WhatsApp inbox.
-        </p>
+      <header className="mb-6 flex items-center gap-3">
+        <div className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border bg-card">
+          <BrandLogo size={30} />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold">Dashboard</h1>
+          <p className="text-sm text-muted-foreground">
+            Overview of your WhatsApp inbox.
+          </p>
+        </div>
       </header>
 
       <Card className="mb-4">

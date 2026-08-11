@@ -144,6 +144,9 @@ export interface BillingStatus {
   configured: boolean;
   /** False for platform admins — they operate Abiz, they do not buy it. */
   billable: boolean;
+  /** 0 means pay upfront — there is no free trial to mention. */
+  trialDays: number;
+
   /** Whether checkout may be started right now, and why not if closed. */
   paymentWindow: {
     open: boolean;

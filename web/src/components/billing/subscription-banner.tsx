@@ -22,6 +22,7 @@ export function SubscriptionBanner() {
   );
 
   const [billable, setBillable] = React.useState(true);
+  const [trialDays, setTrialDays] = React.useState(0);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -31,6 +32,7 @@ export function SubscriptionBanner() {
         if (cancelled) return;
         setSubscription(status.subscription);
         setBillable(status.billable);
+        setTrialDays(status.trialDays);
       } catch {
         // Billing is not critical to rendering the app; stay quiet.
       }
@@ -67,8 +69,11 @@ export function SubscriptionBanner() {
       <span className="min-w-0 flex-1">
         {blocked ? (
           <>
-            <span className="font-medium">Sending is paused.</span> Your trial
-            has ended — incoming messages are still being received and saved.
+            <span className="font-medium">Sending is paused.</span>{" "}
+            {trialDays > 0
+              ? "Your trial has ended"
+              : "Activate your account to start sending"}{" "}
+            — incoming messages are still being received and saved.
           </>
         ) : (
           <>

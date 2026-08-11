@@ -59,8 +59,10 @@ const schema = z.object({
   // webhook cannot be trusted and is rejected.
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
-  // Free trial length for a brand-new account.
-  TRIAL_DAYS: z.coerce.number().int().min(0).default(1),
+  // Free trial length for a brand-new account. 0 means pay upfront: the
+  // account is EXPIRED from the moment it is created, so it can read the
+  // dashboard but cannot send until payment succeeds.
+  TRIAL_DAYS: z.coerce.number().int().min(0).default(0),
 
   // When false, checkout is refused while the current trial or paid term is
   // still running — a customer may only pay once it has ended. Set true to
