@@ -127,9 +127,33 @@ async function withRetry<T>(run: () => Promise<T>, attempts = 4): Promise<T> {
   throw lastError;
 }
 
+/**
+ * Describes a connection string without ever revealing the password, so a
+ * failed login can say which identity was actually used. Getting the username
+ * wrong is the common mistake with Supabase: the pooler needs
+ * "postgres.<project-ref>", while the dashboard's direct string shows plain
+ * "postgres".
+ */
+async function describeTarget(connectionString: string): Promise<string> {
+  try {
+    const { parse } = await import("pg-connection-string");
+    const parsed = parse(connectionString);
+    const host = parsed.host ?? "?";
+    const kind = host.includes("pooler.supabase.com")
+      ? "pooler"
+      : host.startsWith("db.") && host.endsWith("supabase.co")
+        ? "direct (IPv6-only)"
+        : "custom";
+    return `${parsed.user ?? "?"}@${host}:${parsed.port ?? "?"}/${parsed.database ?? "?"} [${kind}]`;
+  } catch {
+    return "unparseable connection string";
+  }
+}
+
 async function createPostgres(connectionString: string): Promise<Database> {
   const pg = await import("pg");
   const dns = await import("node:dns");
+  const target = await describeTarget(connectionString);
 
   // Supabase's pooler hostname resolves on both families; preferring IPv4
   // avoids AAAA lookups that fail on IPv4-only networks.
@@ -161,14 +185,38 @@ async function createPostgres(connectionString: string): Promise<Database> {
     console.error("Idle Postgres client error:", (error as Error).message);
   });
 
+  /**
+   * Postgres reports "password authentication failed for user X" without
+   * saying which host it reached, which makes a wrong username and a wrong
+   * password look identical. Name the target so the next failure is readable.
+   */
+  const explain = (error: unknown): never => {
+    const message = (error as { message?: string })?.message ?? "";
+    // Covers Postgres's own wording and Supabase's pooler (Supavisor), which
+    // rejects a missing project-ref with "no tenant identifier provided".
+    const authFailure =
+      /password authentication failed|no pg_hba|tenant or user not found|tenant identifier|ENOIDENTIFIER|role .* does not exist/i;
+
+    if (authFailure.test(message)) {
+      throw new Error(
+        `${message} — connected as ${target}. ` +
+          "Supabase's pooler expects the username to be postgres.<project-ref>; " +
+          "the dashboard's direct connection string uses plain postgres and will not work here.",
+      );
+    }
+    throw error;
+  };
+
   return {
     driver: "postgres",
     async query<T>(sql: string, params: unknown[] = []) {
-      const result = await withRetry(() => pool.query(sql, params as unknown[]));
+      const result = await withRetry(() =>
+        pool.query(sql, params as unknown[]),
+      ).catch(explain);
       return result.rows as T[];
     },
     async exec(sql: string) {
-      await withRetry(() => pool.query(sql));
+      await withRetry(() => pool.query(sql)).catch(explain);
     },
     async transaction<T>(fn: (tx: Queryable) => Promise<T>) {
       const client = await pool.connect();
