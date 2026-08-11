@@ -234,10 +234,15 @@ export const api = {
     ),
 
   forgotPassword: (email: string) =>
-    post<{ ok: true; message: string; devResetUrl?: string }>(
-      "/api/auth/forgot-password",
-      { email },
-    ),
+    post<{
+      ok: true;
+      message?: string;
+      /** Present only when PASSWORD_RESET_MODE=direct and the account exists. */
+      resetToken?: string;
+      /** false when no account uses that address (direct mode only). */
+      exists?: boolean;
+      devResetUrl?: string;
+    }>("/api/auth/forgot-password", { email }),
 
   resetPassword: (body: { token: string; newPassword: string }) =>
     post<{ ok: true }>("/api/auth/reset-password", body),

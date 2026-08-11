@@ -21,6 +21,16 @@ const schema = z.object({
   // How long a password reset link stays valid.
   RESET_TOKEN_TTL_MINUTES: z.coerce.number().int().positive().default(30),
 
+  /**
+   * "direct" lets anyone who enters a registered email set a new password on
+   * the spot — no mailbox access required. It is convenient and it is also
+   * account takeover for anyone who knows a customer's address.
+   *
+   * "link" is the safe mode: the token is emailed and only the mailbox owner
+   * can complete the reset. Switch to it as soon as a mail provider exists.
+   */
+  PASSWORD_RESET_MODE: z.enum(["direct", "link"]).default("direct"),
+
   // Encrypts WhatsApp access tokens at rest. Generate 32 bytes of hex:
   //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   // Changing this makes already-stored tokens unreadable — they must be

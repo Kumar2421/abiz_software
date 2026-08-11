@@ -211,13 +211,33 @@ authRouter.post(
       [email],
     );
 
-    // Always answer the same way: revealing which addresses have accounts is
-    // an enumeration hole.
     const message = "If that account exists, a reset link has been sent.";
 
     if (!user) {
-      res.json({ ok: true, message });
+      // "direct" mode has to say whether the account exists, or the form
+      // cannot decide whether to show the password fields. "link" mode keeps
+      // the answer uniform so addresses cannot be enumerated.
+      res.json(
+        env.PASSWORD_RESET_MODE === "direct"
+          ? { ok: true, exists: false, message: "No account uses that email address." }
+          : { ok: true, message },
+      );
       return;
+    }
+
+    // Throttle: repeated requests for one account are the shape of an attack,
+    // and in "direct" mode each one hands out a usable token.
+    const recent = await queryOne<{ count: string }>(
+      `SELECT count(*)::text AS count FROM password_resets
+        WHERE user_id = $1 AND created_at > now() - interval '15 minutes'`,
+      [user.id],
+    );
+    if (Number(recent?.count ?? 0) >= 5) {
+      throw new ApiError(
+        429,
+        "Too many reset attempts. Try again in 15 minutes.",
+        "rate_limited",
+      );
     }
 
     const token = randomBytes(32).toString("hex");
@@ -237,6 +257,19 @@ authRouter.post(
       [user.id, hashToken(token), expiresAt.toISOString()],
     );
 
+    if (env.PASSWORD_RESET_MODE === "direct") {
+      // Deliberate product decision: the token goes straight back so the same
+      // card can move on to the new-password fields. Anyone who knows a
+      // registered address can therefore take over that account.
+      res.json({
+        ok: true,
+        exists: true,
+        resetToken: token,
+        expiresAt: expiresAt.toISOString(),
+      });
+      return;
+    }
+
     const resetUrl = `${clientOrigins[0]}/reset-password?token=${token}`;
 
     if (env.NODE_ENV === "production") {
@@ -246,8 +279,6 @@ authRouter.post(
       return;
     }
 
-    // Development only: hand the link straight back so the flow is testable
-    // without an email provider.
     res.json({
       ok: true,
       message,

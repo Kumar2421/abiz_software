@@ -12,10 +12,6 @@ import {
 } from "lucide-react";
 
 import {
-  Avatar,
-  AvatarFallback,
-} from "@/components/ui/avatar";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -23,7 +19,6 @@ import {
 import { useSession } from "@/components/app-shell/auth-guard";
 import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/app-shell/theme-toggle";
-import { initials } from "@/lib/format";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 
@@ -94,11 +89,18 @@ export function IconRail() {
           <TooltipContent side="right">{t("nav.settings")}</TooltipContent>
         </Tooltip>
 
-        <Avatar className="size-8">
-          <AvatarFallback className="text-xs">
-            {initials(user.name)}
-          </AvatarFallback>
-        </Avatar>
+        {/* The signed-in account, shown as the Abiz mark with the user's
+            name on hover so the rail still identifies who is logged in. */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex size-8 items-center justify-center overflow-hidden rounded-full border bg-card">
+              <BrandLogo size={22} />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="right">
+            {user.name} · {user.email}
+          </TooltipContent>
+        </Tooltip>
       </div>
     </nav>
   );
