@@ -204,9 +204,34 @@ export async function getDb(): Promise<Database> {
     // concurrent invocations would each see their own copy. Fail loudly rather
     // than silently losing data.
     if (process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+      // Report which of the expected names reached the function, by name
+      // only. Without this the message cannot distinguish "never set" from
+      // "set but scoped to builds" or "saved blank".
+      const expected = [
+        "DATABASE_URL",
+        "JWT_SECRET",
+        "ENCRYPTION_KEY",
+        "STORAGE_DRIVER",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "NODE_ENV",
+        "CONTEXT",
+      ];
+      const present = expected.filter((name) => process.env[name]);
+      const missing = expected.filter((name) => !process.env[name]);
+
       throw new Error(
-        "DATABASE_URL is required in a serverless environment. " +
-          "PGlite needs a persistent disk; point this at Neon, Supabase, or another hosted Postgres.",
+        [
+          "DATABASE_URL is required in a serverless environment. PGlite needs",
+          "a persistent disk; point this at Supabase, Neon, or another hosted",
+          "Postgres.",
+          `  visible to this function: ${present.join(", ") || "(none)"}`,
+          `  missing: ${missing.join(", ")}`,
+          `  deploy context: ${process.env.CONTEXT ?? "unknown"}`,
+          "  If DATABASE_URL shows as missing but exists in the Netlify UI, its",
+          "  Scopes most likely exclude Functions, or it belongs to a different",
+          "  deploy context.",
+        ].join(" "),
       );
     }
     instance = await createPglite();

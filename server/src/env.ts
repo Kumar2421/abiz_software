@@ -87,7 +87,17 @@ const schema = z.object({
   CRON_SECRET: z.string().optional(),
 });
 
-const parsed = schema.safeParse(process.env);
+// A dashboard variable saved with an empty value arrives as "", which would
+// otherwise pass `.optional()` and then fail much later with a confusing
+// message. Treat blank as absent, and trim stray whitespace from pasted values.
+const cleaned: Record<string, string> = {};
+for (const [key, value] of Object.entries(process.env)) {
+  if (typeof value !== "string") continue;
+  const trimmed = value.trim();
+  if (trimmed) cleaned[key] = trimmed;
+}
+
+const parsed = schema.safeParse(cleaned);
 
 if (!parsed.success) {
   const issues = parsed.error.issues
@@ -104,8 +114,7 @@ if (env.STORAGE_DRIVER === "supabase") {
     (name) => !env[name],
   );
   if (missing.length) {
-    console.error(`STORAGE_DRIVER=supabase requires: ${missing.join(", ")}`);
-    process.exit(1);
+    throw new Error(`STORAGE_DRIVER=supabase requires: ${missing.join(", ")}`);
   }
 }
 
