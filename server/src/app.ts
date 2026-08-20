@@ -14,6 +14,7 @@ import { contactsRouter } from "./routes/contacts.js";
 import { conversationsRouter } from "./routes/conversations.js";
 import { devRouter } from "./routes/dev.js";
 import { mediaRouter } from "./routes/media.js";
+import { metaAuthRouter } from "./routes/metaAuth.js";
 import { settingsRouter } from "./routes/settings.js";
 import { webhookRouter } from "./routes/webhook.js";
 
@@ -44,6 +45,7 @@ app.use("/api/automation", automationRouter);
 app.use("/api/contacts", contactsRouter);
 app.use("/api/conversations", conversationsRouter);
 app.use("/api/settings", settingsRouter);
+app.use("/api/auth/meta", metaAuthRouter);
 app.use("/api/media", mediaRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/dev", devRouter);

@@ -12,6 +12,19 @@ const schema = z.object({
   WHATSAPP_DRIVER: z.enum(["mock", "cloud"]).default("mock"),
   META_GRAPH_VERSION: z.string().default("v21.0"),
 
+  // Facebook Login for Business / Embedded Signup. Blank until the Meta
+  // Developer App exists (Meta-Setup-Guide.md Part 3) — the routes report
+  // "not configured" rather than failing in a confusing way, same pattern
+  // as Razorpay below.
+  META_APP_ID: z.string().optional(),
+  // Server-side only. Never sent to the browser, never logged.
+  META_APP_SECRET: z.string().optional(),
+  // Embedded Signup Configuration ID from the App Dashboard (defines which
+  // screens/fields the signup flow shows). Distinct from META_APP_ID.
+  META_CONFIG_ID: z.string().optional(),
+  // Must exactly match an entry in the app's OAuth redirect allowlist.
+  META_OAUTH_REDIRECT_URI: z.string().optional(),
+
   // Credentials for `npm run seed`. Local development only — the seed script
   // refuses to run when NODE_ENV is production.
   SEED_ADMIN_LOGIN: z.string().trim().min(1).default("admin"),

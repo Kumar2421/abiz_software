@@ -333,6 +333,22 @@ export const api = {
   testWhatsApp: () =>
     post<{ connection: ConnectionState }>("/api/settings/whatsapp/test"),
 
+  /** Starts Embedded Signup: mints a CSRF state bound to the logged-in company. */
+  metaAuthStart: () => post<{ state: string }>("/api/auth/meta/start"),
+
+  /** Completes Embedded Signup once the Facebook SDK hands back a code + WABA/phone ids. */
+  metaAuthCallback: (body: {
+    code: string;
+    state: string;
+    wabaId: string;
+    phoneNumberId: string;
+    businessId?: string;
+  }) =>
+    post<{ ok: true; connection: ConnectionState; webhookWarning: string | null }>(
+      "/api/auth/meta/callback",
+      body,
+    ),
+
   saveWelcome: (body: { enabled: boolean; body: string }) =>
     put<{ ok: true }>("/api/settings/welcome", body),
 

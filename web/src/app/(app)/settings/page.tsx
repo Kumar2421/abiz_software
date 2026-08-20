@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { useSession } from "@/components/app-shell/auth-guard";
 import { AppearanceTab } from "@/components/settings/appearance-tab";
+import { FacebookConnectButton } from "@/components/settings/facebook-connect-button";
 import { CheckoutPanel } from "@/components/billing/checkout-panel";
 import { formatMoney } from "@/components/ui/modern-payment-form";
 import { Badge } from "@/components/ui/badge";
@@ -343,6 +344,7 @@ function SettingsView() {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              <FacebookConnectButton onConnected={setData} />
               <ConnectionNotice whatsapp={data.whatsapp} />
 
               <form
