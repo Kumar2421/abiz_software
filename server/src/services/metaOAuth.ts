@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 
 import { query, queryOne } from "../db/index.js";
 import { env } from "../env.js";
+import { ApiError } from "../lib/http.js";
 
 /**
  * Facebook Login for Business / Embedded Signup token exchange.
@@ -15,22 +16,37 @@ import { env } from "../env.js";
 
 const GRAPH = `https://graph.facebook.com/${env.META_GRAPH_VERSION}`;
 
-export class MetaOAuthNotConfigured extends Error {
-  constructor() {
+export class MetaOAuthNotConfigured extends ApiError {
+  constructor(missing: string[]) {
     super(
-      "Facebook Login is not configured yet. Set META_APP_ID, META_APP_SECRET " +
-        "and META_OAUTH_REDIRECT_URI once the Meta Developer App exists.",
+      503,
+      "Facebook Login is not configured on the server yet. Missing: " +
+        `${missing.join(", ")}. The browser half is configured separately via ` +
+        "NEXT_PUBLIC_META_APP_ID and NEXT_PUBLIC_META_CONFIG_ID, so the Meta " +
+        "dialog can complete while this step still fails.",
+      "meta_not_configured",
     );
   }
 }
 
 function requireConfig() {
-  if (!env.META_APP_ID || !env.META_APP_SECRET || !env.META_OAUTH_REDIRECT_URI) {
-    throw new MetaOAuthNotConfigured();
-  }
+  // META_OAUTH_REDIRECT_URI is deliberately NOT required: Embedded Signup runs
+  // through FB.login() in a popup and never redirects, so there is no callback
+  // URL to match. Demanding it blocked the flow for no reason.
+  const missing = (
+    [
+      ["META_APP_ID", env.META_APP_ID],
+      ["META_APP_SECRET", env.META_APP_SECRET],
+    ] as const
+  )
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+
+  if (missing.length) throw new MetaOAuthNotConfigured(missing);
+
   return {
-    appId: env.META_APP_ID,
-    appSecret: env.META_APP_SECRET,
+    appId: env.META_APP_ID!,
+    appSecret: env.META_APP_SECRET!,
     redirectUri: env.META_OAUTH_REDIRECT_URI,
   };
 }
@@ -73,15 +89,22 @@ export async function exchangeCodeForToken(code: string): Promise<string> {
   const url = new URL(`${GRAPH}/oauth/access_token`);
   url.searchParams.set("client_id", appId);
   url.searchParams.set("client_secret", appSecret);
-  url.searchParams.set("redirect_uri", redirectUri);
   url.searchParams.set("code", code);
+
+  // Embedded Signup has no redirect: the code comes back through FB.login()'s
+  // popup, so there is no callback URL for Meta to match against. Only send
+  // redirect_uri if one is explicitly configured for a classic redirect flow.
+  if (redirectUri) url.searchParams.set("redirect_uri", redirectUri);
 
   const response = await fetch(url);
   const payload = (await response.json()) as TokenResponse;
 
   if (!response.ok || !payload.access_token) {
-    throw new Error(
-      payload.error?.message ?? `Meta rejected the OAuth code (HTTP ${response.status})`,
+    throw new ApiError(
+      502,
+      payload.error?.message ??
+        `Meta rejected the OAuth code (HTTP ${response.status})`,
+      "meta_rejected",
     );
   }
   return payload.access_token;
@@ -110,9 +133,11 @@ export async function exchangeForLongLivedToken(
   const payload = (await response.json()) as TokenResponse;
 
   if (!response.ok || !payload.access_token) {
-    throw new Error(
+    throw new ApiError(
+      502,
       payload.error?.message ??
         `Meta rejected the token exchange (HTTP ${response.status})`,
+      "meta_rejected",
     );
   }
   return {
@@ -156,9 +181,11 @@ export async function fetchOnboardingData(params: {
   };
 
   if (!response.ok) {
-    throw new Error(
+    throw new ApiError(
+      502,
       payload.error?.message ??
         `Could not confirm the connected number (HTTP ${response.status})`,
+      "meta_rejected",
     );
   }
 
