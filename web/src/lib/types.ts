@@ -41,6 +41,19 @@ export interface Message {
   media?: MessageMedia;
 }
 
+/** Click-to-WhatsApp attribution, present only on ad-originated chats. */
+export interface AdReferral {
+  sourceId: string | null;
+  sourceType: string | null;
+  sourceUrl: string | null;
+  headline: string | null;
+  body: string | null;
+  mediaType: string | null;
+  thumbnailUrl: string | null;
+  /** Click id; needed to report conversions back to Meta later. */
+  ctwaClid: string | null;
+}
+
 export interface Conversation {
   id: string;
   contact: Contact;
@@ -51,6 +64,7 @@ export interface Conversation {
   archived: boolean;
   /** Epoch ms of last inbound message — drives the Cloud API 24h send window. */
   lastInboundAt: number;
+  adReferral?: AdReferral;
 }
 
 export interface WhatsAppAccount {

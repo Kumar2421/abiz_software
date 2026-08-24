@@ -33,6 +33,10 @@ devRouter.post(
         phone: z.string().trim().min(6).max(25),
         body: z.string().trim().min(1).max(4096),
         name: z.string().trim().max(120).optional(),
+        // Mimics a Click-to-WhatsApp arrival so ad attribution can be
+        // exercised without a live campaign.
+        adHeadline: z.string().trim().max(200).optional(),
+        adId: z.string().trim().max(64).optional(),
       }),
       req.body,
     );
@@ -42,6 +46,18 @@ devRouter.post(
       fromPhone: input.phone,
       body: input.body,
       profileName: input.name,
+      referral:
+        input.adId || input.adHeadline
+          ? {
+              source_id: input.adId ?? `ad_${Date.now()}`,
+              source_type: "ad",
+              source_url: "https://fb.me/simulated-ad",
+              headline: input.adHeadline ?? "Simulated campaign",
+              body: "Tap to chat with us on WhatsApp",
+              media_type: "image",
+              ctwa_clid: `sim.${Date.now()}`,
+            }
+          : null,
     });
 
     res.status(201).json({ message });

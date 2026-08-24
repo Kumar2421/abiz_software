@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 /**
  * The Abiz mark, used in the sign-in card, the icon rail, and page headers.
  *
- * Sourced from public/logo.png — the 256px PNG extracted out of
+ * Sourced from public/logo.png — the 512px PNG extracted out of
  * src/app/favicon.ico. The .ico itself is left to the browser tab: its other
  * entries top out at 48px, so rendering it at logo size upscales a small
  * bitmap and looks soft on any retina screen.

@@ -21,6 +21,7 @@ export interface ConversationRow {
   unread_count: number;
   archived: boolean;
   welcome_sent: boolean;
+  ad_referral: Record<string, unknown> | null;
   contact_name: string;
   contact_phone: string;
   contact_notes: string | null;
@@ -88,6 +89,29 @@ export function toConversation(row: ConversationRow) {
     unreadCount: Number(row.unread_count),
     archived: row.archived,
     lastInboundAt: epoch(row.last_inbound_at),
+    adReferral: toAdReferral(row.ad_referral),
+  };
+}
+
+/**
+ * Meta's Click-to-WhatsApp `referral` payload, reshaped for the UI.
+ *
+ * Only ever present on conversations that began from an ad, and only from the
+ * customer's first message — Meta does not repeat it, which is why it is
+ * stored on the conversation rather than the message.
+ */
+export function toAdReferral(raw: ConversationRow["ad_referral"]) {
+  if (!raw) return undefined;
+  return {
+    sourceId: (raw.source_id as string) ?? null,
+    sourceType: (raw.source_type as string) ?? null,
+    sourceUrl: (raw.source_url as string) ?? null,
+    headline: (raw.headline as string) ?? null,
+    body: (raw.body as string) ?? null,
+    mediaType: (raw.media_type as string) ?? null,
+    thumbnailUrl: (raw.thumbnail_url as string) ?? null,
+    /** Click id, needed later to report conversions back to Meta. */
+    ctwaClid: (raw.ctwa_clid as string) ?? null,
   };
 }
 
@@ -118,7 +142,7 @@ export function toMessage(row: MessageRow) {
 export const CONVERSATION_SELECT = `
   c.id, c.company_id, c.contact_id, c.last_message, c.last_message_at,
   c.last_message_direction, c.last_inbound_at, c.unread_count, c.archived,
-  c.welcome_sent,
+  c.welcome_sent, c.ad_referral,
   ct.name AS contact_name, ct.phone AS contact_phone,
   ct.notes AS contact_notes, ct.created_at AS contact_created_at
 `;
