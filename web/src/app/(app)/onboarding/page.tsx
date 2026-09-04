@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { CheckoutPanel } from "@/components/billing/checkout-panel";
+import { FacebookConnectButton } from "@/components/settings/facebook-connect-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -229,12 +230,39 @@ export default function OnboardingPage() {
             <CardHeader>
               <CardTitle>Connect your WhatsApp Business Account</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-5">
+              {/* Preferred path: Meta's own dialog fills in the number, the
+                  Phone Number ID and the token, then registers the number for
+                  sending. The manual form below stays as the fallback for
+                  anyone whose Facebook login fails. */}
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Log in with the business&apos;s Facebook account. Meta will
+                  walk you through choosing the WhatsApp Business account and
+                  number — nothing to copy by hand.
+                </p>
+
+                <FacebookConnectButton
+                  compact
+                  onConnected={(next) => {
+                    setData(next);
+                    toast.success("WhatsApp connected");
+                    setStep(2);
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">
+                  or enter the details manually
+                </span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+
               <form className="grid gap-4" onSubmit={saveConnection}>
                 <p className="text-sm text-muted-foreground">
-                  Paste the credentials from Meta Business Manager. Meta
-                  Embedded Signup can fill these automatically once your app is
-                  approved.
+                  Paste the credentials from Meta Business Manager.
                 </p>
 
                 <OnboardField

@@ -23,8 +23,11 @@ import { useFacebookLogin } from "@/lib/facebook-embedded-signup";
  */
 export function FacebookConnectButton({
   onConnected,
+  compact,
 }: {
   onConnected: (data: SettingsPayload) => void;
+  /** Onboarding renders this inside its own card, so drop the framing. */
+  compact?: boolean;
 }) {
   const [connecting, setConnecting] = React.useState(false);
 
@@ -42,7 +45,7 @@ export function FacebookConnectButton({
     try {
       const { state } = await api.metaAuthStart();
       const signup = await connect();
-      const { webhookWarning } = await api.metaAuthCallback({
+      const { webhookWarning, registrationWarning } = await api.metaAuthCallback({
         code: signup.code,
         state,
         wabaId: signup.wabaId,
@@ -52,12 +55,18 @@ export function FacebookConnectButton({
 
       onConnected(await api.settings());
 
-      if (webhookWarning) {
+      // Registration failing matters most: the number looks connected but
+      // cannot send a single message, so it is reported ahead of the webhook.
+      if (registrationWarning) {
+        toast.error(
+          `Connected, but the number is not registered for sending: ${registrationWarning}`,
+        );
+      } else if (webhookWarning) {
         toast.warning(
           `Connected, but message notifications need attention: ${webhookWarning}`,
         );
       } else {
-        toast.success("WhatsApp connected");
+        toast.success("WhatsApp connected and ready to send");
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not connect");
@@ -71,6 +80,20 @@ export function FacebookConnectButton({
     // nothing rather than a button that can only fail. Manual entry below
     // still works.
     return null;
+  }
+
+  if (compact) {
+    return (
+      <Button
+        type="button"
+        onClick={handleClick}
+        disabled={connecting}
+        size="lg"
+        className="w-full bg-[#1877F2] text-white hover:bg-[#1877F2]/90"
+      >
+        {connecting ? "Connecting…" : "Connect Facebook"}
+      </Button>
+    );
   }
 
   return (

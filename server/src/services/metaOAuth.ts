@@ -226,3 +226,59 @@ export async function subscribeToWebhook(params: {
     );
   }
 }
+
+/**
+ * Registers the customer's number for Cloud API use.
+ *
+ * Embedded Signup hands over a number that Meta still considers unregistered:
+ * `checkConnection` reports it as connected and the dashboard looks healthy,
+ * but every send fails until this call succeeds. Skipping it produces a
+ * failure that looks like a messaging bug rather than a missing setup step,
+ * which is why it runs as part of connecting rather than on first send.
+ *
+ * The PIN is two-factor for the number itself. It is generated per connection
+ * and stored so a later re-register (Meta occasionally requires one) does not
+ * need the customer to remember anything.
+ */
+export async function registerPhoneNumber(params: {
+  accessToken: string;
+  phoneNumberId: string;
+  pin: string;
+}): Promise<{ ok: true } | { ok: false; reason: string; alreadyRegistered: boolean }> {
+  const response = await fetch(`${GRAPH}/${params.phoneNumberId}/register`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      pin: params.pin,
+    }),
+  });
+
+  if (response.ok) return { ok: true };
+
+  const payload = (await response.json()) as {
+    error?: { message?: string; error_subcode?: number; code?: number };
+  };
+  const message = payload.error?.message ?? `HTTP ${response.status}`;
+
+  // Meta returns an error when the number is already registered with a
+  // different PIN. That is not a failure to connect — the number works — so
+  // the caller should surface it as a note, not block the connection.
+  const alreadyRegistered =
+    /already registered|already exists/i.test(message) ||
+    payload.error?.error_subcode === 2388005;
+
+  return { ok: false, reason: message, alreadyRegistered };
+}
+
+/** Six digits, avoiding sequences Meta rejects as too weak. */
+export function generateRegistrationPin(): string {
+  for (;;) {
+    const pin = String(randomBytes(4).readUInt32BE(0) % 1_000_000).padStart(6, "0");
+    const digits = new Set(pin);
+    if (digits.size > 2) return pin;
+  }
+}

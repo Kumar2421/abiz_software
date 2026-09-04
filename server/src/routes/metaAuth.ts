@@ -13,6 +13,8 @@ import {
   exchangeCodeForToken,
   exchangeForLongLivedToken,
   fetchOnboardingData,
+  generateRegistrationPin,
+  registerPhoneNumber,
   subscribeToWebhook,
 } from "../services/metaOAuth.js";
 
@@ -83,6 +85,22 @@ metaAuthRouter.post(
         error instanceof Error ? error.message : "Could not subscribe to webhook events";
     }
 
+    // Register the number for Cloud API. Without this the connection looks
+    // healthy and every send fails, so a genuine failure here is reported
+    // rather than swallowed — but "already registered" is fine to continue on.
+    const pin = generateRegistrationPin();
+    const registration = await registerPhoneNumber({
+      accessToken,
+      phoneNumberId: onboarding.phoneNumberId,
+      pin,
+    });
+
+    const registrationWarning = registration.ok
+      ? null
+      : registration.alreadyRegistered
+        ? null
+        : registration.reason;
+
     await query(
       `UPDATE whatsapp_accounts
           SET phone_number_id   = $2,
@@ -93,6 +111,9 @@ metaAuthRouter.post(
               onboarding_method = 'embedded_signup',
               display_number    = COALESCE($7, display_number),
               verified_name     = COALESCE($8, verified_name),
+              registration_pin  = COALESCE($9, registration_pin),
+              registered_at     = CASE WHEN $10 THEN now() ELSE registered_at END,
+              registration_note = $11,
               updated_at        = now()
         WHERE company_id = $1`,
       [
@@ -104,10 +125,14 @@ metaAuthRouter.post(
         req.user!.id,
         onboarding.displayNumber ? normalizePhone(onboarding.displayNumber) : null,
         onboarding.verifiedName,
+        // Only overwrite the stored PIN when this registration actually used it.
+        registration.ok ? encryptSecret(pin) : null,
+        registration.ok || (!registration.ok && registration.alreadyRegistered),
+        registration.ok ? null : registration.reason,
       ],
     );
 
     const connection = await checkConnection(companyId);
-    res.json({ ok: true, connection, webhookWarning });
+    res.json({ ok: true, connection, webhookWarning, registrationWarning });
   }),
 );

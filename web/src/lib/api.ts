@@ -344,10 +344,13 @@ export const api = {
     phoneNumberId: string;
     businessId?: string;
   }) =>
-    post<{ ok: true; connection: ConnectionState; webhookWarning: string | null }>(
-      "/api/auth/meta/callback",
-      body,
-    ),
+    post<{
+      ok: true;
+      connection: ConnectionState;
+      webhookWarning: string | null;
+      /** Set when Cloud API registration failed — the number cannot send yet. */
+      registrationWarning: string | null;
+    }>("/api/auth/meta/callback", body),
 
   saveWelcome: (body: { enabled: boolean; body: string }) =>
     put<{ ok: true }>("/api/settings/welcome", body),
