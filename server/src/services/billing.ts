@@ -358,7 +358,9 @@ export async function markPaid(
               status = $4,
               raw = COALESCE($5, raw),
               updated_at = now()
-        WHERE razorpay_order_id = $1 AND company_id = $2`,
+        -- $1 is the company, $2 the order: matching them the other way round
+        -- compares a UUID column against an order id and throws.
+        WHERE company_id = $1 AND razorpay_order_id = $2`,
       [
         companyId,
         orderId,
