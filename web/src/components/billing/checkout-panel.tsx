@@ -6,7 +6,13 @@ import { toast } from "sonner";
 import { PaymentSuccess } from "@/components/billing/payment-success";
 import { ModernPaymentForm } from "@/components/ui/modern-payment-form";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ApiError, api, type BillingStatus, type Subscription } from "@/lib/api";
+import {
+  ApiError,
+  api,
+  type BillingStatus,
+  type PlanOption,
+  type Subscription,
+} from "@/lib/api";
 
 /** Razorpay injects itself onto window; only the bits we use are typed. */
 interface RazorpayOptions {
@@ -56,12 +62,23 @@ function loadRazorpay(): Promise<boolean> {
   });
 }
 
+/**
+ * An API that predates the plan picker answers with `plan` but no `plans`.
+ * Treating that single plan as the only option keeps the panel working against
+ * a function that has not been redeployed yet.
+ */
+function planOptions(billing: BillingStatus): PlanOption[] {
+  if (billing.plans?.length) return billing.plans;
+  return [{ ...billing.plan, availability: billing.paymentWindow }];
+}
+
 export function CheckoutPanel({
   onActivated,
 }: {
   onActivated?: (subscription: Subscription) => void;
 }) {
   const [billing, setBilling] = React.useState<BillingStatus | null>(null);
+  const [planCode, setPlanCode] = React.useState<string | null>(null);
   const [pending, setPending] = React.useState(false);
   const [paid, setPaid] = React.useState<{
     subscription: Subscription;
@@ -75,6 +92,11 @@ export function CheckoutPanel({
         const status = await api.billingStatus();
         if (cancelled) return;
         setBilling(status);
+        // Land on something the customer can actually buy: a monthly term that
+        // is still running leaves only the lifetime upgrade open.
+        const options = planOptions(status);
+        const open = options.find((plan) => plan.availability.open);
+        setPlanCode((open ?? options[0])?.code ?? null);
         if (status.billable && status.subscription.status === "ACTIVE") {
           setPaid({ subscription: status.subscription });
         }
@@ -87,7 +109,7 @@ export function CheckoutPanel({
     };
   }, []);
 
-  const pay = async () => {
+  const pay = async (code: string) => {
     setPending(true);
     try {
       const ready = await loadRazorpay();
@@ -96,7 +118,7 @@ export function CheckoutPanel({
         return;
       }
 
-      const order = await api.createOrder();
+      const order = await api.createOrder(code);
 
       const checkout = new window.Razorpay({
         key: order.keyId,
@@ -172,20 +194,27 @@ export function CheckoutPanel({
     );
   }
 
+  const plans = planOptions(billing);
+  const selected = plans.find((plan) => plan.code === planCode) ?? plans[0];
+  if (!selected) return null;
+
   // Closed payment window wins over the unconfigured message: it is the one
-  // the customer can act on.
-  const blocked = !billing.paymentWindow.open || !billing.configured;
-  const reason = !billing.paymentWindow.open
-    ? billing.paymentWindow.reason
+  // the customer can act on. The window is the selected plan's, not the
+  // account's — one plan can be open while another is not.
+  const blocked = !selected.availability.open || !billing.configured;
+  const reason = !selected.availability.open
+    ? selected.availability.reason
     : "Payments are not configured on the server yet — add the Razorpay keys to enable checkout.";
 
   return (
     <ModernPaymentForm
-      plan={billing.plan}
+      plans={plans}
+      selectedCode={selected.code}
+      onSelect={setPlanCode}
       pending={pending}
       disabled={blocked}
       disabledReason={reason}
-      onPay={pay}
+      onPay={() => pay(selected.code)}
     />
   );
 }

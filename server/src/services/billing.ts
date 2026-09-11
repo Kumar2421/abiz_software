@@ -35,14 +35,52 @@ interface SubscriptionRow {
 export const razorpayConfigured = () =>
   Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
 
+const PLAN_COLUMNS = `id, code, name, amount_paise, currency, period_days`;
+
+/**
+ * The plan used when the caller names none — the oldest active row, which is
+ * the lifetime plan. Kept for clients that predate plan selection.
+ */
 export async function activePlan(): Promise<PlanRow> {
   const plan = await queryOne<PlanRow>(
-    `SELECT id, code, name, amount_paise, currency, period_days
-       FROM plans WHERE active ORDER BY created_at LIMIT 1`,
+    `SELECT ${PLAN_COLUMNS} FROM plans WHERE active ORDER BY created_at LIMIT 1`,
   );
   if (!plan) throw new ApiError(500, "No plan is configured", "no_plan");
   return plan;
 }
+
+/** Everything on sale, cheapest first — the order the picker renders in. */
+export async function listPlans(): Promise<PlanRow[]> {
+  return query<PlanRow>(
+    `SELECT ${PLAN_COLUMNS} FROM plans WHERE active
+      ORDER BY amount_paise, created_at`,
+  );
+}
+
+/**
+ * Resolves the plan the customer chose. An unknown or withdrawn code is a 404
+ * rather than a silent fall back to the default — charging for a plan the
+ * customer did not pick is worse than an error.
+ */
+export async function resolvePlan(code?: string | null): Promise<PlanRow> {
+  if (!code) return activePlan();
+
+  const plan = await queryOne<PlanRow>(
+    `SELECT ${PLAN_COLUMNS} FROM plans WHERE code = $1 AND active`,
+    [code],
+  );
+  if (!plan) throw ApiError.notFound(`No plan is on sale with the code "${code}"`);
+  return plan;
+}
+
+/** Shape a plan row for the API. */
+export const planShape = (plan: PlanRow) => ({
+  code: plan.code,
+  name: plan.name,
+  amountPaise: plan.amount_paise,
+  currency: plan.currency,
+  periodDays: plan.period_days,
+});
 
 /**
  * Creates the subscription row at registration.
@@ -104,10 +142,11 @@ export async function getSubscription(companyId: string) {
     row!.status = "EXPIRED";
   }
 
+  // Deliberately not filtered by `active`: a customer keeps the plan they
+  // bought even after it is withdrawn from sale.
   const plan = row!.plan_id
     ? await queryOne<PlanRow>(
-        `SELECT id, code, name, amount_paise, currency, period_days
-           FROM plans WHERE id = $1`,
+        `SELECT ${PLAN_COLUMNS} FROM plans WHERE id = $1`,
         [row!.plan_id],
       )
     : null;
@@ -117,14 +156,7 @@ export async function getSubscription(companyId: string) {
     trialEndsAt: row!.trial_ends_at,
     activatedAt: row!.activated_at,
     expiresAt: row!.expires_at,
-    plan: plan
-      ? {
-          code: plan.code,
-          name: plan.name,
-          amountPaise: plan.amount_paise,
-          currency: plan.currency,
-        }
-      : null,
+    plan: plan ? planShape(plan) : null,
   };
 }
 
@@ -151,18 +183,27 @@ const whenText = (iso: string) =>
   });
 
 /**
- * Decides whether checkout may be started.
+ * Decides whether checkout may be started, for one particular plan.
  *
- * A lifetime purchase can only be made once, so an already-ACTIVE account is
- * always refused. Beyond that, ALLOW_EARLY_PAYMENT=false means a customer must
- * wait until their current trial or paid term has actually ended before
- * paying, rather than buying part-way through one.
+ * A lifetime purchase can only be made once, so an already-ACTIVE account with
+ * no expiry is always refused. Beyond that, ALLOW_EARLY_PAYMENT=false means a
+ * customer must wait until their current trial or paid term has actually ended
+ * before paying, rather than buying part-way through one.
+ *
+ * The one exception is buying lifetime while a monthly term is still running:
+ * that is an upgrade, not a double charge, so it stays open. Without it a
+ * monthly customer would have to let their account lapse before they could
+ * buy the bigger plan.
  */
-export function paymentWindow(subscription: {
-  status: SubscriptionStatus;
-  trialEndsAt: string | null;
-  expiresAt: string | null;
-}): PaymentWindow {
+export function paymentWindow(
+  subscription: {
+    status: SubscriptionStatus;
+    trialEndsAt: string | null;
+    expiresAt: string | null;
+  },
+  /** The plan being bought. Omitted means "any plan" — the strictest answer. */
+  plan?: Pick<PlanRow, "period_days"> | null,
+): PaymentWindow {
   // Lifetime plans never lapse, so paying again would just take money twice.
   if (subscription.status === "ACTIVE" && !subscription.expiresAt) {
     return { open: false, reason: "This account is already active." };
@@ -178,6 +219,7 @@ export function paymentWindow(subscription: {
   if (env.ALLOW_EARLY_PAYMENT) return { open: true };
 
   const now = Date.now();
+  const buyingLifetime = plan ? plan.period_days === null : false;
 
   if (
     subscription.status === "TRIAL" &&
@@ -196,6 +238,8 @@ export function paymentWindow(subscription: {
     subscription.expiresAt &&
     new Date(subscription.expiresAt).getTime() > now
   ) {
+    if (buyingLifetime) return { open: true };
+
     return {
       open: false,
       reason: `Your current plan runs until ${whenText(subscription.expiresAt)}. Renewal opens when it ends.`,
@@ -217,8 +261,14 @@ function authHeader(): string {
   return `Basic ${Buffer.from(raw).toString("base64")}`;
 }
 
-/** Creates a Razorpay order and records it as a pending payment. */
-export async function createOrder(companyId: string) {
+/**
+ * Creates a Razorpay order and records it as a pending payment.
+ *
+ * `planCode` comes from the customer's choice in the picker. The amount is
+ * always read from the plans table here — never taken from the request — so a
+ * tampered client cannot buy lifetime access at the monthly price.
+ */
+export async function createOrder(companyId: string, planCode?: string | null) {
   if (!razorpayConfigured()) {
     throw new ApiError(
       503,
@@ -227,10 +277,10 @@ export async function createOrder(companyId: string) {
     );
   }
 
-  const plan = await activePlan();
+  const plan = await resolvePlan(planCode);
   const subscription = await getSubscription(companyId);
 
-  const gate = paymentWindow(subscription);
+  const gate = paymentWindow(subscription, plan);
   if (!gate.open) throw new ApiError(409, gate.reason!, "payment_not_due");
 
   const response = await fetch(`${RAZORPAY_API}/orders`, {
@@ -291,6 +341,8 @@ export async function createOrder(companyId: string) {
     currency: plan.currency,
     keyId: env.RAZORPAY_KEY_ID!,
     planName: plan.name,
+    planCode: plan.code,
+    periodDays: plan.period_days,
   };
 }
 

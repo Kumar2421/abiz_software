@@ -118,28 +118,41 @@ export type SubscriptionStatus =
   | "CANCELLED"
   | "SUSPENDED";
 
+export interface Plan {
+  code: string;
+  name: string;
+  amountPaise: number;
+  currency: string;
+  /** null = one-time purchase that never expires. */
+  periodDays: number | null;
+}
+
+/** Whether checkout may be started right now, and why not if closed. */
+export interface PaymentWindow {
+  open: boolean;
+  reason?: string;
+  opensAt?: string | null;
+}
+
+/** A plan on sale, with the window that applies to this account. */
+export interface PlanOption extends Plan {
+  availability: PaymentWindow;
+}
+
 export interface Subscription {
   status: SubscriptionStatus;
   trialEndsAt: string | null;
   activatedAt: string | null;
   expiresAt: string | null;
-  plan: {
-    code: string;
-    name: string;
-    amountPaise: number;
-    currency: string;
-  } | null;
+  plan: Plan | null;
 }
 
 export interface BillingStatus {
   subscription: Subscription;
-  plan: {
-    code: string;
-    name: string;
-    amountPaise: number;
-    currency: string;
-    periodDays: number | null;
-  };
+  /** The default plan. Prefer `plans` — it carries every option. */
+  plan: Plan;
+  /** Everything on sale, cheapest first. */
+  plans: PlanOption[];
   /** False until Razorpay keys are set on the server. */
   configured: boolean;
   /** False for platform admins — they operate Abiz, they do not buy it. */
@@ -147,12 +160,8 @@ export interface BillingStatus {
   /** 0 means pay upfront — there is no free trial to mention. */
   trialDays: number;
 
-  /** Whether checkout may be started right now, and why not if closed. */
-  paymentWindow: {
-    open: boolean;
-    reason?: string;
-    opensAt?: string | null;
-  };
+  /** The window for the default plan; each entry in `plans` has its own. */
+  paymentWindow: PaymentWindow;
 }
 
 export interface PaymentRecord {
@@ -371,14 +380,17 @@ export const api = {
 
   billingStatus: () => request<BillingStatus>("/api/billing/status"),
 
-  createOrder: () =>
+  /** The server prices the order from `planCode`; the amount is never sent. */
+  createOrder: (planCode?: string) =>
     post<{
       orderId: string;
       amountPaise: number;
       currency: string;
       keyId: string;
       planName: string;
-    }>("/api/billing/order"),
+      planCode: string;
+      periodDays: number | null;
+    }>("/api/billing/order", { planCode }),
 
   verifyPayment: (body: {
     razorpay_order_id: string;

@@ -8,10 +8,12 @@ import {
   activePlan,
   createOrder,
   getSubscription,
+  listPlans,
   markFailed,
   markPaid,
   paymentHistory,
   paymentWindow,
+  planShape,
   razorpayConfigured,
   trialDays,
   verifyCheckout,
@@ -107,20 +109,22 @@ billingRouter.use(requireAuth);
 billingRouter.get(
   "/status",
   asyncHandler(async (req, res) => {
-    const [subscription, plan] = await Promise.all([
+    const [subscription, plan, plans] = await Promise.all([
       getSubscription(req.user!.companyId),
       activePlan(),
+      listPlans(),
     ]);
 
     res.json({
       subscription,
-      plan: {
-        code: plan.code,
-        name: plan.name,
-        amountPaise: plan.amount_paise,
-        currency: plan.currency,
-        periodDays: plan.period_days,
-      },
+      // The default plan, for the sake of clients that predate the picker.
+      plan: planShape(plan),
+      // Each plan carries its own window: a monthly term that is still running
+      // blocks a renewal but not an upgrade to lifetime.
+      plans: plans.map((row) => ({
+        ...planShape(row),
+        availability: paymentWindow(subscription, row),
+      })),
       configured: razorpayConfigured(),
       // Platform admins run Abiz rather than subscribe to it, so the UI hides
       // billing for them instead of asking the operator to pay.
@@ -137,7 +141,15 @@ billingRouter.get(
 billingRouter.post(
   "/order",
   asyncHandler(async (req, res) => {
-    res.status(201).json(await createOrder(req.user!.companyId));
+    // Optional: an older client sends no body and gets the default plan.
+    const input = parseBody(
+      z.object({ planCode: z.string().trim().min(1).max(40).optional() }),
+      req.body ?? {},
+    );
+
+    res
+      .status(201)
+      .json(await createOrder(req.user!.companyId, input.planCode));
   }),
 );
 

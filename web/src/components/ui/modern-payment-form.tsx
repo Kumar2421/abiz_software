@@ -12,10 +12,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import type { PlanOption } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
- * Plan summary and pay button.
+ * Plan picker and pay button.
  *
  * Card and UPI details are captured by Razorpay Checkout in its own hosted
  * modal — deliberately NOT by a form here. Collecting a raw card number or CVV
@@ -23,14 +24,6 @@ import { cn } from "@/lib/utils";
  * quarterly scans) and Razorpay will not accept raw card data from a server
  * that is not certified. Handing off keeps us at SAQ A.
  */
-
-export interface PaymentPlan {
-  name: string;
-  amountPaise: number;
-  currency: string;
-  /** null = one-time purchase with no expiry. */
-  periodDays?: number | null;
-}
 
 export const formatMoney = (paise: number, currency = "INR") =>
   new Intl.NumberFormat("en-IN", {
@@ -52,36 +45,120 @@ const INCLUDED = [
   "File and voice attachments",
 ];
 
-export function ModernPaymentForm({
+/**
+ * How long the plan lasts, in the customer's words.
+ *
+ * Nothing here promises an automatic charge: there is no Razorpay mandate
+ * behind the monthly plan, so the term simply ends and the customer chooses
+ * whether to pay again.
+ */
+export function planTerm(periodDays: number | null): string {
+  if (periodDays === null) return "One time · lifetime access";
+  if (periodDays % 30 === 0) {
+    const months = periodDays / 30;
+    return months === 1 ? "Every month" : `Every ${months} months`;
+  }
+  return `Every ${periodDays} days`;
+}
+
+function planDetail(plan: PlanOption): string {
+  return plan.periodDays === null
+    ? "One-time payment · lifetime access · no renewals"
+    : `Valid for ${plan.periodDays} days · nothing is charged automatically`;
+}
+
+function PlanTile({
   plan,
+  selected,
+  best,
+  onSelect,
+}: {
+  plan: PlanOption;
+  selected: boolean;
+  best: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        "relative flex flex-col items-start gap-0.5 rounded-xl border p-3 text-left transition",
+        "hover:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none",
+        selected ? "border-primary bg-primary/5" : "border-border",
+        !plan.availability.open && "opacity-60",
+      )}
+    >
+      {best && (
+        <span className="absolute -top-2 right-2 rounded-full bg-primary px-2 py-0.5 text-[10px] font-medium text-primary-foreground">
+          Best value
+        </span>
+      )}
+      <span className="text-xs text-muted-foreground">{plan.name}</span>
+      <span className="text-xl font-semibold tabular-nums">
+        {formatMoney(plan.amountPaise, plan.currency)}
+      </span>
+      <span className="text-[11px] text-muted-foreground">
+        {planTerm(plan.periodDays)}
+      </span>
+    </button>
+  );
+}
+
+export function ModernPaymentForm({
+  plans,
+  selectedCode,
+  onSelect,
   pending,
   disabled,
   disabledReason,
   onPay,
   className,
 }: {
-  plan: PaymentPlan;
+  plans: PlanOption[];
+  selectedCode: string;
+  onSelect: (code: string) => void;
   pending?: boolean;
   disabled?: boolean;
   disabledReason?: string;
   onPay: () => void;
   className?: string;
 }) {
-  const oneTime = !plan.periodDays;
+  const selected = plans.find((plan) => plan.code === selectedCode) ?? plans[0];
+  if (!selected) return null;
+
+  // Only worth calling out when there is something to compare it against.
+  const bestCode =
+    plans.length > 1
+      ? plans.find((plan) => plan.periodDays === null)?.code
+      : undefined;
 
   return (
     <div className={cn("flex items-center justify-center p-4", className)}>
       <Card className="w-full max-w-md rounded-2xl shadow-lg">
         <CardContent className="space-y-6 p-6">
+          {plans.length > 1 && (
+            <div className="grid grid-cols-2 gap-3">
+              {plans.map((plan) => (
+                <PlanTile
+                  key={plan.code}
+                  plan={plan}
+                  selected={plan.code === selected.code}
+                  best={plan.code === bestCode}
+                  onSelect={() => onSelect(plan.code)}
+                />
+              ))}
+            </div>
+          )}
+
           <div className="space-y-1 text-center">
-            <p className="text-sm text-muted-foreground">{plan.name}</p>
+            <p className="text-sm text-muted-foreground">{selected.name}</p>
             <p className="text-4xl font-semibold tracking-tight tabular-nums">
-              {formatMoney(plan.amountPaise, plan.currency)}
+              {formatMoney(selected.amountPaise, selected.currency)}
             </p>
             <p className="text-xs text-muted-foreground">
-              {oneTime
-                ? "One-time payment · lifetime access · no renewals"
-                : `Billed every ${plan.periodDays} days`}
+              {planDetail(selected)}
             </p>
           </div>
 
@@ -124,7 +201,7 @@ export function ModernPaymentForm({
             ) : (
               <>
                 <Lock className="size-4" />
-                Pay {formatMoney(plan.amountPaise, plan.currency)}
+                Pay {formatMoney(selected.amountPaise, selected.currency)}
               </>
             )}
           </Button>

@@ -38,7 +38,9 @@ export function PaymentSuccess({
     },
     {
       icon: subscription.expiresAt ? CalendarCheck : InfinityIcon,
-      label: subscription.expiresAt ? "Renews on" : "Validity",
+      // Not "Renews on": there is no mandate, so nothing is charged again
+      // unless the customer chooses to pay.
+      label: subscription.expiresAt ? "Valid until" : "Validity",
       value: subscription.expiresAt
         ? new Date(subscription.expiresAt).toLocaleDateString(undefined, {
             day: "numeric",
@@ -79,6 +81,13 @@ export function PaymentSuccess({
           </Card>
         ))}
       </div>
+
+      {subscription.expiresAt && (
+        <p className="text-center text-xs text-muted-foreground">
+          Nothing is charged automatically. Abiz will prompt you to pay again
+          before this date.
+        </p>
+      )}
 
       {paymentId && (
         <p className="text-center text-xs text-muted-foreground">
