@@ -4,6 +4,7 @@ import { decryptSecret } from "../lib/crypto.js";
 import { ApiError } from "../lib/http.js";
 import { normalizePhone } from "../lib/phone.js";
 import { getWhatsAppProvider } from "../providers/whatsapp.js";
+import { canSend, getSubscription } from "./billing.js";
 import {
   CONVERSATION_SELECT,
   MESSAGE_FROM,
@@ -484,6 +485,12 @@ async function maybeSendWelcome(companyId: string, conversationId: string) {
   const conversation = await requireConversation(companyId, conversationId);
   if (conversation.welcome_sent) return;
 
+  // Reached from the webhook, which has no session and so never passes through
+  // requireActiveSubscription. Without this an unpaid account would still send
+  // — and be billed by Meta for — a welcome message on every new chat.
+  const subscription = await getSubscription(companyId);
+  if (!canSend(subscription.status)) return;
+
   const welcome = await queryOne<{ enabled: boolean; body: string }>(
     `SELECT enabled, body FROM welcome_messages WHERE company_id = $1`,
     [companyId],
@@ -533,6 +540,28 @@ export async function applyStatusUpdate(
 
   const message = toMessage(await loadMessage(updated.id));
   return message;
+}
+
+/**
+ * How much unread mail is waiting behind the paywall.
+ *
+ * Drives the "N messages are waiting" notice shown to an unpaid account, which
+ * is the only thing it may see about them. Counted from `unread_count` so a
+ * customer who paid, read their inbox, then lapsed is not told that old,
+ * already-read messages are waiting.
+ */
+export async function countWaitingInbound(companyId: string) {
+  const row = await queryOne<{ messages: number; conversations: number }>(
+    `SELECT COALESCE(SUM(unread_count), 0)::int AS messages,
+            COUNT(*) FILTER (WHERE unread_count > 0)::int AS conversations
+       FROM conversations
+      WHERE company_id = $1`,
+    [companyId],
+  );
+  return {
+    messages: Number(row?.messages ?? 0),
+    conversations: Number(row?.conversations ?? 0),
+  };
 }
 
 export async function companyStats(companyId: string) {

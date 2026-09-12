@@ -1,7 +1,8 @@
 import { Router } from "express";
 
 import { requireAuth } from "../lib/auth.js";
-import { asyncHandler } from "../lib/http.js";
+import { inboxLocked } from "../lib/subscription.js";
+import { ApiError, asyncHandler } from "../lib/http.js";
 import { findMedia, openMedia } from "../services/media.js";
 
 export const mediaRouter = Router();
@@ -14,6 +15,19 @@ mediaRouter.use(requireAuth);
 mediaRouter.get(
   "/:id",
   asyncHandler(async (req, res) => {
+    // A photo a customer sent is message content like any other, so it is
+    // withheld from an unpaid account too. Without this the inbox could be
+    // locked while the attachments behind it stayed readable by URL.
+    const lock = await inboxLocked(req.user!);
+    if (lock.locked) {
+      throw new ApiError(
+        402,
+        "Complete payment to open your attachments.",
+        "subscription_required",
+        { status: lock.status },
+      );
+    }
+
     const row = await findMedia(req.user!.companyId, String(req.params.id));
     const inline = req.query.download === undefined;
 

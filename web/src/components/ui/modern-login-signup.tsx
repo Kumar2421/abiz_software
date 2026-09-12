@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
@@ -329,14 +330,14 @@ export function ModernLoginSignup({
               required
               className="border-white/15 bg-black text-white placeholder:text-neutral-500"
             />
-            <Input
+            <PasswordInput
               name="password"
-              type="password"
               autoComplete={isLogin ? "current-password" : "new-password"}
               placeholder="Password"
               minLength={8}
               required
               className="border-white/15 bg-black text-white placeholder:text-neutral-500"
+              toggleClassName="text-neutral-400 hover:text-white"
             />
 
             {isLogin && (

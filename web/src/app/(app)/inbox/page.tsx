@@ -8,6 +8,7 @@ import { ChatEmptyState, ChatPane } from "@/components/inbox/chat-pane";
 import { ContactDrawer } from "@/components/inbox/contact-drawer";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { FolderNav } from "@/components/inbox/folder-nav";
+import { InboxLocked } from "@/components/inbox/inbox-locked";
 import { NewChatDialog } from "@/components/inbox/new-chat-dialog";
 import { InboxSkeleton } from "@/components/skeletons";
 import { ApiError, api } from "@/lib/api";
@@ -69,6 +70,12 @@ function InboxView() {
   const [query, setQuery] = React.useState("");
   const [contactOpen, setContactOpen] = React.useState(true);
   const [loading, setLoading] = React.useState(true);
+  // Set by the API while the account is unpaid; the conversation list comes
+  // back empty in that case, so nothing can be rendered from it.
+  const [locked, setLocked] = React.useState<{
+    messages: number;
+    conversations: number;
+  } | null>(null);
   // Bumping this re-runs both fetch effects.
   const [refreshKey, setRefreshKey] = React.useState(0);
 
@@ -84,11 +91,17 @@ function InboxView() {
     const timer = setTimeout(
       async () => {
         try {
-          const { conversations: rows } = await api.conversations({
+          const result = await api.conversations({
             folder,
             search: query.trim() || undefined,
           });
-          if (!cancelled) setConversations(rows);
+          if (cancelled) return;
+          setLocked(
+            result.locked
+              ? (result.waiting ?? { messages: 0, conversations: 0 })
+              : null,
+          );
+          setConversations(result.conversations);
         } catch (error) {
           if (error instanceof ApiError && error.status === 401) {
             router.replace("/login");
@@ -111,7 +124,9 @@ function InboxView() {
   /* ---------------- open thread ------------------------------------------ */
 
   React.useEffect(() => {
-    if (!selectedId) return;
+    // A deep link can still carry ?conversation=… into a locked inbox; the API
+    // would answer 402, so skip the request rather than toast an error.
+    if (!selectedId || locked) return;
 
     let cancelled = false;
     (async () => {
@@ -138,7 +153,7 @@ function InboxView() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, refreshKey]);
+  }, [selectedId, refreshKey, locked]);
 
   /* ---------------- polling ---------------------------------------------- */
 
@@ -241,7 +256,11 @@ function InboxView() {
   };
 
   // First load only: later refreshes keep the current list on screen.
-  if (loading && conversations.length === 0) return <InboxSkeleton />;
+  if (loading && conversations.length === 0 && !locked) return <InboxSkeleton />;
+
+  // Replaces the whole inbox rather than sitting above it: with the list empty
+  // by design, folders and search would only offer dead ends.
+  if (locked) return <InboxLocked waiting={locked} />;
 
   return (
     <>

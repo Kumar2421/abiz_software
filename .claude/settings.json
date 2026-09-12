@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:cal.com)"
+      "WebFetch(domain:cal.com)",
+      "Bash(git add *)",
+      "Bash(git commit -q -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { ApiError, api } from "@/lib/api";
 
@@ -164,10 +165,9 @@ function ResetPasswordView() {
               <Label htmlFor="newPassword" className="text-neutral-300">
                 New password
               </Label>
-              <Input
+              <PasswordInput
                 id="newPassword"
                 name="newPassword"
-                type="password"
                 minLength={8}
                 autoComplete="new-password"
                 autoFocus
@@ -180,10 +180,9 @@ function ResetPasswordView() {
               <Label htmlFor="confirmPassword" className="text-neutral-300">
                 Confirm password
               </Label>
-              <Input
+              <PasswordInput
                 id="confirmPassword"
                 name="confirmPassword"
-                type="password"
                 minLength={8}
                 autoComplete="new-password"
                 required

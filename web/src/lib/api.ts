@@ -109,6 +109,18 @@ export interface SettingsPayload {
   driver: "mock" | "cloud";
 }
 
+/** The profile card customers see when they tap the business name in a chat. */
+export interface WhatsAppProfile {
+  about: string;
+  address: string;
+  description: string;
+  email: string;
+  vertical: string;
+  websites: string[];
+  /** Meta-hosted URL; changed by uploading, never set directly. */
+  profilePictureUrl: string | null;
+}
+
 export type SubscriptionStatus =
   | "TRIAL"
   | "ACTIVE"
@@ -264,9 +276,13 @@ export const api = {
     if (params.folder) query.set("folder", params.folder);
     if (params.search) query.set("search", params.search);
     const suffix = query.toString() ? `?${query}` : "";
-    return request<{ conversations: Conversation[] }>(
-      `/api/conversations${suffix}`,
-    );
+    return request<{
+      conversations: Conversation[];
+      /** True while the account is unpaid: the list comes back empty. */
+      locked?: boolean;
+      /** Only sent when locked — all an unpaid account may know. */
+      waiting?: { messages: number; conversations: number };
+    }>(`/api/conversations${suffix}`);
   },
 
   startConversation: (body: { phone: string; name?: string }) =>
@@ -341,6 +357,27 @@ export const api = {
 
   testWhatsApp: () =>
     post<{ connection: ConnectionState }>("/api/settings/whatsapp/test"),
+
+  whatsappProfile: () =>
+    request<{ profile: WhatsAppProfile }>("/api/settings/whatsapp/profile"),
+
+  saveWhatsAppProfile: (body: {
+    about?: string;
+    address?: string;
+    description?: string;
+    email?: string;
+    vertical?: string;
+    website?: string;
+  }) => put<{ profile: WhatsAppProfile }>("/api/settings/whatsapp/profile", body),
+
+  uploadWhatsAppPhoto: (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return request<{ profile: WhatsAppProfile }>(
+      "/api/settings/whatsapp/profile/photo",
+      { method: "POST", body: form },
+    );
+  },
 
   /** Starts Embedded Signup: mints a CSRF state bound to the logged-in company. */
   metaAuthStart: () => post<{ state: string }>("/api/auth/meta/start"),

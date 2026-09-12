@@ -1,14 +1,22 @@
 import type { NextFunction, Request, Response } from "express";
 
-import { canSend, getSubscription, trialDays } from "../services/billing.js";
+import {
+  canSend,
+  getSubscription,
+  trialDays,
+  type SubscriptionStatus,
+} from "../services/billing.js";
 import { ApiError } from "./http.js";
 
 /**
  * Blocks actions that cost money or leave the platform once a subscription has
- * lapsed. Reading stays open on purpose: the owner can still see the inbox,
- * contacts, and reminders, and the WhatsApp webhook is never gated — inbound
- * customer messages must keep being stored, or messages that arrive during a
- * lapse are lost for good.
+ * lapsed.
+ *
+ * The WhatsApp webhook itself is never gated — Meta delivers whether or not
+ * the account is paid, and refusing to store the message would destroy a real
+ * customer enquiry that cannot be recovered. Inbound is therefore always
+ * written; what payment controls is whether the owner may *read* it. See
+ * `inboxLocked`.
  */
 export async function requireActiveSubscription(
   req: Request,
@@ -45,4 +53,32 @@ export async function requireActiveSubscription(
   } catch (error) {
     next(error);
   }
+}
+
+export interface InboxLock {
+  /** True when message content must be withheld until the account is paid. */
+  locked: boolean;
+  status: SubscriptionStatus;
+}
+
+/**
+ * Whether this account may read the messages it has received.
+ *
+ * Unpaid accounts keep receiving and storing inbound messages, but the content
+ * is withheld until they pay — they are told how many are waiting instead.
+ * Withholding happens on the server, never by hiding text in the browser,
+ * which anyone could read back out of the network tab.
+ */
+export async function inboxLocked(user: {
+  role: string;
+  companyId: string;
+}): Promise<InboxLock> {
+  // Platform admins operate Abiz rather than subscribe to it.
+  if (user.role === "admin") return { locked: false, status: "ACTIVE" };
+
+  const subscription = await getSubscription(user.companyId);
+  return {
+    locked: !canSend(subscription.status),
+    status: subscription.status,
+  };
 }

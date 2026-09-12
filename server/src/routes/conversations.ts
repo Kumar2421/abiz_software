@@ -3,7 +3,7 @@ import multer from "multer";
 import { z } from "zod";
 
 import { requireAuth } from "../lib/auth.js";
-import { requireActiveSubscription } from "../lib/subscription.js";
+import { inboxLocked, requireActiveSubscription } from "../lib/subscription.js";
 import { asyncHandler, parseBody, parseQuery } from "../lib/http.js";
 import { isValidPhone } from "../lib/phone.js";
 import { ApiError } from "../lib/http.js";
@@ -11,6 +11,7 @@ import {
   getOrCreateConversation,
   listConversations,
   listMessages,
+  countWaitingInbound,
   markConversationRead,
   requireConversation,
   sendMediaMessage,
@@ -43,11 +44,25 @@ conversationsRouter.get(
       req.query,
     );
 
+    // An unpaid account is told how much is waiting and nothing else. Returning
+    // an empty list rather than redacted rows means no message text, contact
+    // name, or phone number is ever serialised to a browser that has not paid.
+    const lock = await inboxLocked(req.user!);
+    if (lock.locked) {
+      res.json({
+        conversations: [],
+        locked: true,
+        waiting: await countWaitingInbound(req.user!.companyId),
+      });
+      return;
+    }
+
     res.json({
       conversations: await listConversations(req.user!.companyId, {
         folder,
         search,
       }),
+      locked: false,
     });
   }),
 );
@@ -82,6 +97,18 @@ conversationsRouter.post(
 conversationsRouter.get(
   "/:id/messages",
   asyncHandler(async (req, res) => {
+    // Guards the thread directly: the list above hides conversations, but a
+    // remembered or guessed id must not hand back the messages anyway.
+    const lock = await inboxLocked(req.user!);
+    if (lock.locked) {
+      throw new ApiError(
+        402,
+        "Complete payment to read your messages.",
+        "subscription_required",
+        { status: lock.status },
+      );
+    }
+
     const row = await requireConversation(req.user!.companyId, String(req.params.id));
     const messages = await listMessages(req.user!.companyId, String(req.params.id));
     const window = sendWindow(row);

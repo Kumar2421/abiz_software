@@ -5,8 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
-  Eye,
-  EyeOff,
   LogOut,
   RefreshCw,
 } from "lucide-react";
@@ -16,12 +14,14 @@ import { StatusPill } from "@/components/app-shell/status-pill";
 import { useSession } from "@/components/app-shell/auth-guard";
 import { AppearanceTab } from "@/components/settings/appearance-tab";
 import { FacebookConnectButton } from "@/components/settings/facebook-connect-button";
+import { WhatsAppProfileCard } from "@/components/settings/whatsapp-profile-card";
 import { CheckoutPanel } from "@/components/billing/checkout-panel";
 import { formatMoney } from "@/components/ui/modern-payment-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -36,24 +36,6 @@ import {
 } from "@/lib/api";
 import { formatPhone } from "@/lib/format";
 import { useT } from "@/lib/i18n";
-
-function PasswordInput(props: React.ComponentProps<typeof Input>) {
-  const [visible, setVisible] = React.useState(false);
-  return (
-    <div className="flex gap-2">
-      <Input {...props} type={visible ? "text" : "password"} className="font-mono" />
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? "Hide value" : "Reveal value"}
-      >
-        {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-      </Button>
-    </div>
-  );
-}
 
 function Field({
   id,
@@ -395,6 +377,7 @@ function SettingsView() {
                   <PasswordInput
                     id="wa-token"
                     name="accessToken"
+                    className="font-mono"
                     placeholder={
                       data.whatsapp.accessTokenHint ?? "Paste your token"
                     }
@@ -449,6 +432,11 @@ function SettingsView() {
               </form>
             </CardContent>
           </Card>
+
+          <WhatsAppProfileCard
+            key={data.whatsapp.status}
+            connected={data.whatsapp.status === "connected"}
+          />
         </TabsContent>
 
         {/* ---------------- Welcome ---------------- */}
@@ -600,19 +588,19 @@ function SettingsView() {
                 <p className="text-sm font-medium">Change password</p>
                 <div className="grid gap-1.5">
                   <Label htmlFor="current-password">Current password</Label>
-                  <Input
+                  <PasswordInput
                     id="current-password"
                     name="currentPassword"
-                    type="password"
+                    autoComplete="current-password"
                     required
                   />
                 </div>
                 <div className="grid gap-1.5">
                   <Label htmlFor="new-password">New password</Label>
-                  <Input
+                  <PasswordInput
                     id="new-password"
                     name="newPassword"
-                    type="password"
+                    autoComplete="new-password"
                     minLength={8}
                     required
                   />

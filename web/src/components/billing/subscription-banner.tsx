@@ -98,13 +98,14 @@ export function SubscriptionBanner() {
       <span className="min-w-0 flex-1">
         {blocked ? (
           <>
-            <span className="font-medium">Sending is paused.</span>{" "}
+            <span className="font-medium">Your inbox is locked.</span>{" "}
             {subscription.activatedAt
-              ? "Your plan has ended — renew to start sending again"
+              ? "Your plan has ended — renew to read and reply again"
               : trialDays > 0
                 ? "Your trial has ended"
-                : "Activate your account to start sending"}{" "}
-            — incoming messages are still being received and saved.
+                : "Activate your account to read and reply"}{" "}
+            — messages your customers send are still saved, and unlock the
+            moment you pay.
           </>
         ) : (
           <>

@@ -1,17 +1,32 @@
 import { Router } from "express";
+import multer from "multer";
 import { z } from "zod";
 
 import { query, queryOne } from "../db/index.js";
 import { env } from "../env.js";
 import { requireAuth } from "../lib/auth.js";
-import { encryptSecret, secretHint } from "../lib/crypto.js";
-import { asyncHandler, parseBody } from "../lib/http.js";
+import { decryptSecret, encryptSecret, secretHint } from "../lib/crypto.js";
+import { ApiError, asyncHandler, parseBody } from "../lib/http.js";
 import { isValidPhone, normalizePhone } from "../lib/phone.js";
 import { checkConnection } from "../services/connection.js";
 import { companyStats } from "../services/messaging.js";
+import {
+  PROFILE_PICTURE_MAX_BYTES,
+  PROFILE_PICTURE_TYPES,
+  getBusinessProfile,
+  updateBusinessProfile,
+  uploadProfilePicture,
+} from "../services/whatsappProfile.js";
 
 export const settingsRouter = Router();
 settingsRouter.use(requireAuth);
+
+// Held in memory: the bytes go straight back out to Meta's upload endpoint and
+// are never stored by Abiz.
+const profilePhoto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: PROFILE_PICTURE_MAX_BYTES, files: 1 },
+});
 
 // Tokens are encrypted at rest; the browser only ever sees a "••••1234" hint.
 
@@ -160,6 +175,112 @@ settingsRouter.post(
   "/whatsapp/test",
   asyncHandler(async (req, res) => {
     res.json({ connection: await checkConnection(req.user!.companyId) });
+  }),
+);
+
+/* ------------------------------------------------------------------ */
+/* WhatsApp business profile — the card customers see in a chat        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Reads the connected number's credentials, ready to call Meta with.
+ *
+ * Everything under /whatsapp/profile needs a live Cloud API connection, so the
+ * failure is reported once here rather than repeated in each handler.
+ */
+async function connectedAccount(companyId: string) {
+  const row = await queryOne<{
+    phone_number_id: string | null;
+    access_token: string | null;
+  }>(
+    `SELECT phone_number_id, access_token
+       FROM whatsapp_accounts WHERE company_id = $1`,
+    [companyId],
+  );
+
+  const accessToken = decryptSecret(row?.access_token ?? null);
+  if (!row?.phone_number_id || !accessToken) {
+    throw new ApiError(
+      409,
+      "Connect a WhatsApp number before editing its profile.",
+      "not_connected",
+    );
+  }
+
+  return { phoneNumberId: row.phone_number_id, accessToken };
+}
+
+settingsRouter.get(
+  "/whatsapp/profile",
+  asyncHandler(async (req, res) => {
+    res.json({
+      profile: await getBusinessProfile(
+        await connectedAccount(req.user!.companyId),
+      ),
+    });
+  }),
+);
+
+settingsRouter.put(
+  "/whatsapp/profile",
+  asyncHandler(async (req, res) => {
+    const input = parseBody(
+      z.object({
+        // Meta's own field limits; exceeding them is a 400 from Graph with a
+        // message that does not name the field.
+        about: z.string().trim().max(139).optional(),
+        address: z.string().trim().max(256).optional(),
+        description: z.string().trim().max(512).optional(),
+        email: z.union([z.string().trim().email().max(128), z.literal("")]).optional(),
+        vertical: z.string().trim().max(64).optional(),
+        website: z.union([z.string().trim().url().max(256), z.literal("")]).optional(),
+      }),
+      req.body,
+    );
+
+    const { website, ...rest } = input;
+
+    const account = await connectedAccount(req.user!.companyId);
+    await updateBusinessProfile({
+      ...account,
+      patch: {
+        ...rest,
+        // Meta takes a list of up to two; the UI offers the one that matters.
+        ...(website === undefined ? {} : { websites: website ? [website] : [] }),
+      },
+    });
+
+    res.json({ profile: await getBusinessProfile(account) });
+  }),
+);
+
+/** Replaces the display picture. Multipart, one image. */
+settingsRouter.post(
+  "/whatsapp/profile/photo",
+  profilePhoto.single("file"),
+  asyncHandler(async (req, res) => {
+    const file = req.file;
+    if (!file) throw ApiError.badRequest("Choose an image first");
+
+    if (!PROFILE_PICTURE_TYPES.includes(file.mimetype as "image/jpeg")) {
+      throw ApiError.badRequest(
+        "WhatsApp only accepts a JPG or PNG profile picture.",
+      );
+    }
+
+    const account = await connectedAccount(req.user!.companyId);
+    const handle = await uploadProfilePicture({
+      accessToken: account.accessToken,
+      buffer: file.buffer,
+      mimeType: file.mimetype,
+    });
+
+    await updateBusinessProfile({
+      ...account,
+      patch: { profilePictureHandle: handle },
+    });
+
+    res.json({ profile: await getBusinessProfile(account) });
   }),
 );
 
