@@ -8,6 +8,15 @@ import type { PaymentGateway } from "./types.js";
 
 export * from "./types.js";
 export { razorpayCheckoutSignatureValid } from "./razorpay.js";
+
+/**
+ * Whether Razorpay has keys, independent of which gateway is selling.
+ *
+ * The browser-signature verify path is Razorpay-specific and still reachable
+ * after a switch — a stale tab can post to it — so it has to check for itself
+ * rather than assume the active gateway is Razorpay.
+ */
+export const razorpayConfigured = (): boolean => razorpayGateway.configured();
 export { parseCashfreeJson as parseGatewayJson } from "./cashfree.js";
 
 const GATEWAYS: Record<string, PaymentGateway> = {

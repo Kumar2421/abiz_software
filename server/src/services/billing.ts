@@ -4,6 +4,7 @@ import { ApiError } from "../lib/http.js";
 import {
   getGateway,
   razorpayCheckoutSignatureValid,
+  razorpayConfigured,
 } from "./gateways/index.js";
 
 export type SubscriptionStatus =
@@ -372,6 +373,19 @@ export async function verifyCheckout(params: {
 }) {
   if (!paymentsConfigured()) {
     throw new ApiError(503, "Payments are not configured", "payments_unconfigured");
+  }
+
+  // This path checks a Razorpay signature, and Razorpay's keys are gone once
+  // Abiz sells through another gateway. A stale browser tab can still post
+  // here; without this it would reach the HMAC with an undefined key and fail
+  // as a 500, and — worse — the signature check below would mark the caller's
+  // own order failed on the way out.
+  if (!razorpayConfigured()) {
+    throw new ApiError(
+      400,
+      "This payment method is no longer available. Reload the page and try again.",
+      "gateway_mismatch",
+    );
   }
 
   if (!razorpayCheckoutSignatureValid(params)) {
