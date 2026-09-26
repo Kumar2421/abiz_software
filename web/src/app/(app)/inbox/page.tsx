@@ -19,6 +19,7 @@ import type {
   Message,
   WhatsAppAccount,
 } from "@/lib/types";
+import { useSubscriptionChanges } from "@/lib/subscription-events";
 import { cn } from "@/lib/utils";
 
 const EMPTY_ACCOUNT: WhatsAppAccount = {
@@ -76,6 +77,7 @@ function InboxView() {
     messages: number;
     conversations: number;
   } | null>(null);
+  const unlocked = useSubscriptionChanges();
   // Bumping this re-runs both fetch effects.
   const [refreshKey, setRefreshKey] = React.useState(0);
 
@@ -119,7 +121,9 @@ function InboxView() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [folder, query, router, refreshKey]);
+    // `unlocked` is here so paying in another tab clears the lock at once,
+    // rather than leaving the inbox locked until the next 30-second poll.
+  }, [folder, query, router, refreshKey, unlocked]);
 
   /* ---------------- open thread ------------------------------------------ */
 

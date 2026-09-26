@@ -6,6 +6,7 @@ import { AlertTriangle, Clock } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { api, canSend, type Subscription } from "@/lib/api";
+import { useSubscriptionChanges } from "@/lib/subscription-events";
 import { cn } from "@/lib/utils";
 
 function hoursLeft(iso: string): number {
@@ -29,6 +30,10 @@ export function SubscriptionBanner() {
   const [billable, setBillable] = React.useState(true);
   const [trialDays, setTrialDays] = React.useState(0);
 
+  // Re-reads after a payment. Without this the strip keeps asking for money
+  // that has already been paid until the page is reloaded.
+  const changed = useSubscriptionChanges();
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -45,7 +50,7 @@ export function SubscriptionBanner() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [changed]);
 
   // Platform admins are never nagged to pay.
   if (!billable) return null;

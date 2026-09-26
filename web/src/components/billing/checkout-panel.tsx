@@ -13,6 +13,7 @@ import {
   type PlanOption,
   type Subscription,
 } from "@/lib/api";
+import { announceSubscriptionChange } from "@/lib/subscription-events";
 
 /** Razorpay injects itself onto window; only the bits we use are typed. */
 interface RazorpayOptions {
@@ -129,6 +130,10 @@ export function CheckoutPanel({
   const settle = (subscription: Subscription, paymentId?: string) => {
     setPaid({ subscription, paymentId });
     onActivated?.(subscription);
+    // The banner above the shell and the inbox lock each hold their own copy
+    // of the billing state, fetched when they mounted. Without this they keep
+    // showing "locked" and asking for money already paid until a reload.
+    announceSubscriptionChange();
     toast.success("Payment confirmed");
   };
 
