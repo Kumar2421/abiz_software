@@ -430,6 +430,9 @@ export const api = {
       driver: "mock" | "cloud";
     }>("/api/settings/stats"),
 
+  /** Public price list — no session needed. */
+  publicPlans: () => request<{ plans: Plan[] }>("/api/billing/plans"),
+
   billingStatus: () => request<BillingStatus>("/api/billing/status"),
 
   /** The server prices the order from `planCode`; the amount is never sent. */

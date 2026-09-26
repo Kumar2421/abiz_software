@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { SiteFooter } from "@/components/site-footer";
 import {
   ModernLoginSignup,
   type AuthFormValues,
@@ -61,10 +62,17 @@ function LoginView() {
   };
 
   return (
-    <ModernLoginSignup
-      onSubmit={handleSubmit}
-      onSocial={() => toast.info("Social sign-in is not enabled yet")}
-      onForgotPassword={handleForgot}
-    />
+    <div className="flex min-h-svh flex-col">
+      <div className="flex-1">
+        <ModernLoginSignup
+          onSubmit={handleSubmit}
+          onSocial={() => toast.info("Social sign-in is not enabled yet")}
+          onForgotPassword={handleForgot}
+        />
+      </div>
+      {/* Terms, privacy and refund policy have to be reachable from the page
+          a customer signs up on, not only from inside the app. */}
+      <SiteFooter />
+    </div>
   );
 }

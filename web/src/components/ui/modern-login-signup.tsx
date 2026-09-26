@@ -393,11 +393,17 @@ export function ModernLoginSignup({
 
           <p className="mt-3 text-xs leading-relaxed text-neutral-500">
             By continuing you agree to our{" "}
-            <a href="#" className="text-neutral-400 hover:text-neutral-200">
+            <a
+              href="https://anantio.com/legal/terms-of-service.html"
+              className="text-neutral-400 underline hover:text-neutral-200"
+            >
               Terms of Service
             </a>{" "}
             and{" "}
-            <a href="#" className="text-neutral-400 hover:text-neutral-200">
+            <a
+              href="https://anantio.com/legal/privacy-policy.html"
+              className="text-neutral-400 underline hover:text-neutral-200"
+            >
               Privacy Policy
             </a>
             .

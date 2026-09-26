@@ -44,6 +44,46 @@
 # config = { path: [...] }` in api.mjs. Declaring redirects here as well would
 # rewrite the URL and hide the real path from Express.
 
+# The legal pages live once, on the company site. A payment gateway's review
+# checks these paths on the domain that takes payment, and a customer will try
+# them there too, so the app domain answers rather than 404s. 301 rather than a
+# rewrite: one canonical copy, no duplicate content.
+[[redirects]]
+  from = "/terms"
+  to = "https://anantio.com/legal/terms-of-service.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/privacy"
+  to = "https://anantio.com/legal/privacy-policy.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/refund"
+  to = "https://anantio.com/legal/refund-policy.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/cookies"
+  to = "https://anantio.com/legal/cookie-policy.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/data-deletion"
+  to = "https://anantio.com/legal/data-deletion.html"
+  status = 301
+  force = true
+
+[[redirects]]
+  from = "/contact"
+  to = "https://anantio.com/#contact"
+  status = 301
+  force = true
+
 # Anything else that is not a real file gets the exported 404 page.
 [[redirects]]
   from = "/*"

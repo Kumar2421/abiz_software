@@ -105,6 +105,20 @@ billingRouter.post(
   }),
 );
 
+/**
+ * The price list, readable without signing in.
+ *
+ * A payment gateway's review checks that the prices a customer is charged are
+ * published on the site, and the pricing page must be reachable by someone who
+ * has no account. Carries no per-account state — just what is on sale.
+ */
+billingRouter.get(
+  "/plans",
+  asyncHandler(async (_req, res) => {
+    res.json({ plans: (await listPlans()).map(planShape) });
+  }),
+);
+
 /* ------------------------------------------------------------------ */
 /* Everything below needs a session.                                   */
 /* ------------------------------------------------------------------ */
