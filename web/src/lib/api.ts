@@ -121,6 +121,19 @@ export interface WhatsAppProfile {
   profilePictureUrl: string | null;
 }
 
+/**
+ * Everything the browser needs to open one gateway's checkout. Which gateway
+ * is a server decision, so the client branches on `gateway` rather than
+ * assuming.
+ */
+export type GatewayCheckout =
+  | { gateway: "razorpay"; keyId: string; orderId: string }
+  | {
+      gateway: "cashfree";
+      paymentSessionId: string;
+      mode: "sandbox" | "production";
+    };
+
 export type SubscriptionStatus =
   | "TRIAL"
   | "ACTIVE"
@@ -425,17 +438,27 @@ export const api = {
       orderId: string;
       amountPaise: number;
       currency: string;
+      /** Razorpay only. Prefer `checkout`, which says which gateway this is. */
       keyId: string;
+      checkout: GatewayCheckout;
       planName: string;
       planCode: string;
       periodDays: number | null;
     }>("/api/billing/order", { planCode }),
 
-  verifyPayment: (body: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-  }) => post<{ subscription: Subscription }>("/api/billing/verify", body),
+  /**
+   * Razorpay hands the browser a signed receipt to pass back. Cashfree hands
+   * it nothing, so only the order id is sent and the server asks Cashfree.
+   */
+  verifyPayment: (
+    body:
+      | {
+          razorpay_order_id: string;
+          razorpay_payment_id: string;
+          razorpay_signature: string;
+        }
+      | { orderId: string },
+  ) => post<{ subscription: Subscription }>("/api/billing/verify", body),
 
   payments: () => request<{ payments: PaymentRecord[] }>("/api/billing/payments"),
 

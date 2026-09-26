@@ -16,6 +16,7 @@ import {
   planShape,
   paymentsConfigured,
   trialDays,
+  verifyByStatus,
   verifyCheckout,
 } from "../services/billing.js";
 import { getGateway } from "../services/gateways/index.js";
@@ -136,23 +137,34 @@ billingRouter.post(
 billingRouter.post(
   "/verify",
   asyncHandler(async (req, res) => {
+    // Two shapes, because the gateways confirm differently. Razorpay's
+    // checkout hands the browser a signed receipt, so those wire names stay as
+    // they are. Cashfree hands it nothing, so the client sends only the order
+    // id and the server asks Cashfree directly.
     const input = parseBody(
-      // Wire names stay Razorpay's: this is the shape its checkout hands the
-      // browser. A Cashfree verify will be a separate, smaller body.
-      z.object({
-        razorpay_order_id: z.string().min(4),
-        razorpay_payment_id: z.string().min(4),
-        razorpay_signature: z.string().min(16),
-      }),
+      z.union([
+        z.object({
+          razorpay_order_id: z.string().min(4),
+          razorpay_payment_id: z.string().min(4),
+          razorpay_signature: z.string().min(16),
+        }),
+        z.object({ orderId: z.string().min(4).max(120) }),
+      ]),
       req.body,
     );
 
-    const subscription = await verifyCheckout({
-      companyId: req.user!.companyId,
-      orderId: input.razorpay_order_id,
-      paymentId: input.razorpay_payment_id,
-      signature: input.razorpay_signature,
-    });
+    const subscription =
+      "orderId" in input
+        ? await verifyByStatus({
+            companyId: req.user!.companyId,
+            orderId: input.orderId,
+          })
+        : await verifyCheckout({
+            companyId: req.user!.companyId,
+            orderId: input.razorpay_order_id,
+            paymentId: input.razorpay_payment_id,
+            signature: input.razorpay_signature,
+          });
 
     res.json({ subscription });
   }),

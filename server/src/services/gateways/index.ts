@@ -1,4 +1,5 @@
 import { env } from "../../env.js";
+import { cashfreeGateway } from "./cashfree.js";
 import { razorpayGateway } from "./razorpay.js";
 import type { PaymentGateway } from "./types.js";
 
@@ -7,6 +8,7 @@ export { razorpayCheckoutSignatureValid } from "./razorpay.js";
 
 const GATEWAYS: Record<string, PaymentGateway> = {
   razorpay: razorpayGateway,
+  cashfree: cashfreeGateway,
 };
 
 /**

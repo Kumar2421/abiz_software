@@ -92,6 +92,16 @@ const schema = z.object({
   // webhook cannot be trusted and is rejected.
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
 
+  // Cashfree. Same pattern as Razorpay: blank until the account is ready.
+  CASHFREE_APP_ID: z.string().optional(),
+  CASHFREE_SECRET_KEY: z.string().optional(),
+  // Shown when the webhook is created in the dashboard. A different value from
+  // the secret key above — signing the body with the API secret always fails.
+  CASHFREE_WEBHOOK_SECRET: z.string().optional(),
+  // Sandbox and production are separate hosts *and* separate key pairs. A
+  // production key against the sandbox host authenticates as nobody.
+  CASHFREE_MODE: z.enum(["sandbox", "production"]).default("sandbox"),
+
   // Free trial length for a brand-new account. 0 means pay upfront: the
   // account is EXPIRED from the moment it is created, so it can read the
   // dashboard but cannot send until payment succeeds.

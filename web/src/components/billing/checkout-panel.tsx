@@ -32,20 +32,37 @@ interface RazorpayOptions {
   modal?: { ondismiss?: () => void };
 }
 
+/** Cashfree's v3 SDK, likewise only the parts used here. */
+interface CashfreeInstance {
+  checkout: (options: {
+    paymentSessionId: string;
+    redirectTarget?: "_modal" | "_self" | "_blank";
+  }) => Promise<{ error?: { message?: string }; paymentDetails?: unknown }>;
+}
+
 declare global {
   interface Window {
     Razorpay?: new (options: RazorpayOptions) => { open: () => void };
+    Cashfree?: (config: { mode: "sandbox" | "production" }) => CashfreeInstance;
   }
 }
 
-const SCRIPT_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+const RAZORPAY_SRC = "https://checkout.razorpay.com/v1/checkout.js";
+const CASHFREE_SRC = "https://sdk.cashfree.com/js/v3/cashfree.js";
 
-function loadRazorpay(): Promise<boolean> {
-  if (window.Razorpay) return Promise.resolve(true);
+/**
+ * Loads a gateway's SDK once, however many times checkout is opened.
+ *
+ * Deliberately lazy: the script is only fetched when the customer actually
+ * pays, so nobody downloads a payment SDK just for visiting Settings, and the
+ * gateway Abiz is not using is never loaded at all.
+ */
+function loadScript(src: string, ready: () => boolean): Promise<boolean> {
+  if (ready()) return Promise.resolve(true);
 
   return new Promise((resolve) => {
     const existing = document.querySelector<HTMLScriptElement>(
-      `script[src="${SCRIPT_SRC}"]`,
+      `script[src="${src}"]`,
     );
     if (existing) {
       existing.addEventListener("load", () => resolve(true));
@@ -54,7 +71,7 @@ function loadRazorpay(): Promise<boolean> {
     }
 
     const script = document.createElement("script");
-    script.src = SCRIPT_SRC;
+    script.src = src;
     script.async = true;
     script.onload = () => resolve(true);
     script.onerror = () => resolve(false);
@@ -109,19 +126,83 @@ export function CheckoutPanel({
     };
   }, []);
 
+  const settle = (subscription: Subscription, paymentId?: string) => {
+    setPaid({ subscription, paymentId });
+    onActivated?.(subscription);
+    toast.success("Payment confirmed");
+  };
+
+  const reportFailure = (error: unknown, fallback: string) => {
+    toast.error(error instanceof ApiError ? error.message : fallback);
+  };
+
+  /**
+   * Cashfree returns from its modal with no signed receipt, so the order id is
+   * handed to the server and the server asks Cashfree what happened. A closed
+   * modal is not a failure — the customer may simply have changed their mind.
+   */
+  const payWithCashfree = async (
+    orderId: string,
+    session: { paymentSessionId: string; mode: "sandbox" | "production" },
+  ) => {
+    const ready = await loadScript(CASHFREE_SRC, () => Boolean(window.Cashfree));
+    if (!ready || !window.Cashfree) {
+      toast.error("Could not reach Cashfree checkout. Check your connection.");
+      setPending(false);
+      return;
+    }
+
+    const result = await window
+      .Cashfree({ mode: session.mode })
+      .checkout({
+        paymentSessionId: session.paymentSessionId,
+        redirectTarget: "_modal",
+      });
+
+    if (result?.error) {
+      toast.info(result.error.message ?? "Checkout closed — no payment was taken");
+      setPending(false);
+      return;
+    }
+
+    try {
+      const { subscription } = await api.verifyPayment({ orderId });
+      settle(subscription);
+    } catch (error) {
+      reportFailure(error, "We could not verify that payment");
+    } finally {
+      setPending(false);
+    }
+  };
+
   const pay = async (code: string) => {
     setPending(true);
     try {
-      const ready = await loadRazorpay();
-      if (!ready || !window.Razorpay) {
-        toast.error("Could not reach Razorpay checkout. Check your connection.");
+      const order = await api.createOrder(code);
+
+      // Older functions answer without `checkout`; they are Razorpay-only.
+      const checkoutConfig = order.checkout ?? {
+        gateway: "razorpay" as const,
+        keyId: order.keyId,
+        orderId: order.orderId,
+      };
+
+      if (checkoutConfig.gateway === "cashfree") {
+        await payWithCashfree(order.orderId, checkoutConfig);
         return;
       }
 
-      const order = await api.createOrder(code);
+      const ready = await loadScript(RAZORPAY_SRC, () =>
+        Boolean(window.Razorpay),
+      );
+      if (!ready || !window.Razorpay) {
+        toast.error("Could not reach Razorpay checkout. Check your connection.");
+        setPending(false);
+        return;
+      }
 
       const checkout = new window.Razorpay({
-        key: order.keyId,
+        key: checkoutConfig.keyId,
         amount: order.amountPaise,
         currency: order.currency,
         name: "Abiz",
@@ -133,18 +214,9 @@ export function CheckoutPanel({
         handler: async (response) => {
           try {
             const { subscription } = await api.verifyPayment(response);
-            setPaid({
-              subscription,
-              paymentId: response.razorpay_payment_id,
-            });
-            onActivated?.(subscription);
-            toast.success("Payment confirmed");
+            settle(subscription, response.razorpay_payment_id);
           } catch (error) {
-            toast.error(
-              error instanceof ApiError
-                ? error.message
-                : "We could not verify that payment",
-            );
+            reportFailure(error, "We could not verify that payment");
           } finally {
             setPending(false);
           }
@@ -160,9 +232,7 @@ export function CheckoutPanel({
       checkout.open();
       return; // pending clears in the handler or on dismiss
     } catch (error) {
-      toast.error(
-        error instanceof ApiError ? error.message : "Could not start checkout",
-      );
+      reportFailure(error, "Could not start checkout");
       setPending(false);
     }
   };

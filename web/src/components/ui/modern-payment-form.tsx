@@ -212,8 +212,8 @@ export function ModernPaymentForm({
             </p>
           ) : (
             <p className="text-center text-xs text-muted-foreground">
-              Card details are entered on Razorpay&apos;s secure checkout and
-              never reach Abiz servers.
+              Card details are entered on the payment provider&apos;s secure
+              checkout and never reach Abiz servers.
             </p>
           )}
         </CardContent>

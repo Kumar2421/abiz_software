@@ -391,6 +391,45 @@ export async function verifyCheckout(params: {
   return getSubscription(params.companyId);
 }
 
+/**
+ * Confirms a payment by asking the gateway what happened.
+ *
+ * Used by gateways that hand the browser nothing to verify. It is strictly
+ * safer than trusting a callback — the answer comes from the gateway over an
+ * authenticated connection, so there is nothing for a tampered page to forge.
+ */
+export async function verifyByStatus(params: {
+  companyId: string;
+  orderId: string;
+}) {
+  if (!paymentsConfigured()) {
+    throw new ApiError(503, "Payments are not configured", "payments_unconfigured");
+  }
+
+  // The order must belong to this company; otherwise one tenant could activate
+  // itself with another tenant's payment.
+  const payment = await queryOne<{ id: string }>(
+    `SELECT id FROM payments WHERE gateway_order_id = $1 AND company_id = $2`,
+    [params.orderId, params.companyId],
+  );
+  if (!payment) throw ApiError.notFound("Unknown order for this account");
+
+  const status = await getGateway().fetchStatus(params.orderId);
+
+  if (!status.paid) {
+    // Not an error state worth keeping quiet about, but not a failure to shout
+    // about either: closing the checkout window lands here.
+    throw new ApiError(
+      402,
+      status.error ?? "That payment was not completed.",
+      "payment_incomplete",
+    );
+  }
+
+  await markPaid(params.companyId, params.orderId, status.paymentId, "captured");
+  return getSubscription(params.companyId);
+}
+
 /** Flips the payment and the subscription together, or neither. */
 export async function markPaid(
   companyId: string,
