@@ -319,9 +319,14 @@ export async function createOrder(companyId: string, planCode?: string | null) {
     orderId: order.orderId,
     amountPaise: plan.amount_paise,
     currency: plan.currency,
-    // Kept at the top level for the existing Razorpay client. New clients read
-    // `checkout`, which carries whatever this gateway needs.
-    keyId: env.RAZORPAY_KEY_ID ?? "",
+    // Only meaningful for Razorpay, and only sent when Razorpay made the
+    // order. Sending it otherwise hands every signed-in browser the live
+    // Razorpay key id for no reason, and would let a stale client open
+    // Razorpay's checkout against another gateway's order id — which fails in
+    // a far more confusing way than not finding the field at all.
+    ...(order.checkout.gateway === "razorpay"
+      ? { keyId: order.checkout.keyId }
+      : {}),
     checkout: order.checkout,
     planName: plan.name,
     planCode: plan.code,

@@ -183,7 +183,7 @@ export function CheckoutPanel({
       // Older functions answer without `checkout`; they are Razorpay-only.
       const checkoutConfig = order.checkout ?? {
         gateway: "razorpay" as const,
-        keyId: order.keyId,
+        keyId: order.keyId ?? "",
         orderId: order.orderId,
       };
 

@@ -438,8 +438,8 @@ export const api = {
       orderId: string;
       amountPaise: number;
       currency: string;
-      /** Razorpay only. Prefer `checkout`, which says which gateway this is. */
-      keyId: string;
+      /** Sent only when Razorpay made the order. Prefer `checkout`. */
+      keyId?: string;
       checkout: GatewayCheckout;
       planName: string;
       planCode: string;
