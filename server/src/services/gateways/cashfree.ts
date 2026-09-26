@@ -60,6 +60,23 @@ interface PaymentEntity {
 }
 
 /**
+ * Parses Cashfree JSON without corrupting payment ids.
+ *
+ * `cf_payment_id` is a 19-digit integer, which is past what a JavaScript
+ * number can hold exactly (2^53). API v2023-08-01 sends it as a bare number, so
+ * a plain JSON.parse rounds it — 1457277198646882304 came back as
+ * ...882300 — and the wrong id was stored against the payment. That is the id
+ * a refund or a dispute is looked up by, and nothing about it fails loudly.
+ * Quoting it first keeps every digit; where Cashfree already sends a string,
+ * the pattern does not match and nothing changes.
+ */
+export function parseCashfreeJson<T>(json: string): T {
+  return JSON.parse(
+    json.replace(/("cf_payment_id"\s*:\s*)(\d{16,})/g, '$1"$2"'),
+  ) as T;
+}
+
+/**
  * `payment_method` arrives as an object keyed by instrument, but the payments
  * table stores a short label. Take the key.
  */
@@ -171,7 +188,10 @@ export const cashfreeGateway: PaymentGateway = {
       headers: headers(),
     });
 
-    const payload = (await response.json()) as PaymentEntity[] | CashfreeError;
+    // Read as text, not .json(): the parser would round the payment id.
+    const payload = parseCashfreeJson<PaymentEntity[] | CashfreeError>(
+      await response.text(),
+    );
 
     if (!response.ok) {
       throw new ApiError(
@@ -216,14 +236,14 @@ export const cashfreeGateway: PaymentGateway = {
   },
 
   parseWebhook(rawBody: string): WebhookEvent {
-    const event = JSON.parse(rawBody) as {
+    const event = parseCashfreeJson<{
       type?: string;
       data?: {
         order?: { order_id?: string };
         payment?: PaymentEntity;
         error_details?: { error_description?: string; error_reason?: string };
       };
-    };
+    }>(rawBody);
 
     const payment = event.data?.payment;
 

@@ -8,6 +8,7 @@ import type { PaymentGateway } from "./types.js";
 
 export * from "./types.js";
 export { razorpayCheckoutSignatureValid } from "./razorpay.js";
+export { parseCashfreeJson as parseGatewayJson } from "./cashfree.js";
 
 const GATEWAYS: Record<string, PaymentGateway> = {
   razorpay: razorpayGateway,

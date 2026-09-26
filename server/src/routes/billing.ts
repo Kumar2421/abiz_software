@@ -22,6 +22,7 @@ import {
 import {
   describeWebhookRejection,
   gatewayForWebhook,
+  parseGatewayJson,
 } from "../services/gateways/index.js";
 
 export const billingRouter = Router();
@@ -88,7 +89,9 @@ billingRouter.post(
     );
     if (!row) return; // Not an order we created.
 
-    const parsed: unknown = JSON.parse(rawBody);
+    // The stored copy is what a dispute is reconciled against, so it must not
+    // carry a rounded payment id either.
+    const parsed: unknown = parseGatewayJson(rawBody);
 
     if (event.outcome === "failed") {
       await markFailed(event.orderId, event.error ?? "Payment failed", parsed);
