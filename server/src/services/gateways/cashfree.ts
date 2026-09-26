@@ -83,6 +83,18 @@ function nationalNumber(input: string): string {
   return digits.length > 10 ? digits.slice(-10) : digits;
 }
 
+/**
+ * The key Cashfree signs webhooks with.
+ *
+ * Unlike Razorpay, Cashfree has no separate webhook signing secret: it uses
+ * the same client secret as the API. CASHFREE_WEBHOOK_SECRET stays supported
+ * as an override for anyone who set it, but falling back to the API secret is
+ * what makes the common setup work — without it every webhook is refused with
+ * a 400 and the gateway retries for hours.
+ */
+export const webhookSecret = (): string | undefined =>
+  env.CASHFREE_WEBHOOK_SECRET ?? env.CASHFREE_SECRET_KEY;
+
 /** Constant-time compare so a wrong signature leaks nothing through timing. */
 function signatureMatches(expected: string, received: string): boolean {
   const a = Buffer.from(expected, "utf8");
@@ -189,13 +201,14 @@ export const cashfreeGateway: PaymentGateway = {
    * bytes received — re-serialising the parsed JSON will not reproduce them.
    */
   verifyWebhook(rawBody: string, headerMap: Record<string, string>): boolean {
-    if (!env.CASHFREE_WEBHOOK_SECRET) return false;
+    const secret = webhookSecret();
+    if (!secret) return false;
 
     const signature = headerMap["x-webhook-signature"] ?? "";
     const timestamp = headerMap["x-webhook-timestamp"] ?? "";
     if (!signature || !timestamp) return false;
 
-    const expected = createHmac("sha256", env.CASHFREE_WEBHOOK_SECRET)
+    const expected = createHmac("sha256", secret)
       .update(timestamp + rawBody)
       .digest("base64");
 

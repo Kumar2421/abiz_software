@@ -95,8 +95,9 @@ const schema = z.object({
   // Cashfree. Same pattern as Razorpay: blank until the account is ready.
   CASHFREE_APP_ID: z.string().optional(),
   CASHFREE_SECRET_KEY: z.string().optional(),
-  // Shown when the webhook is created in the dashboard. A different value from
-  // the secret key above — signing the body with the API secret always fails.
+  // Optional, and normally left unset: Cashfree signs webhooks with
+  // CASHFREE_SECRET_KEY above. Unlike Razorpay it has no separate webhook
+  // secret. Kept only as an override should that ever change.
   CASHFREE_WEBHOOK_SECRET: z.string().optional(),
   // Sandbox and production are separate hosts *and* separate key pairs. A
   // production key against the sandbox host authenticates as nobody.

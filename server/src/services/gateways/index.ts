@@ -1,5 +1,8 @@
 import { env } from "../../env.js";
-import { cashfreeGateway } from "./cashfree.js";
+import {
+  cashfreeGateway,
+  webhookSecret as cashfreeWebhookSecret,
+} from "./cashfree.js";
 import { razorpayGateway } from "./razorpay.js";
 import type { PaymentGateway } from "./types.js";
 
@@ -70,7 +73,10 @@ export function describeWebhookRejection(
 
   return [
     `configured gateways: ${configured.join(", ")}`,
-    `cashfree webhook secret set: ${Boolean(env.CASHFREE_WEBHOOK_SECRET)}`,
+    // The effective key, not the override — Cashfree normally signs with the
+    // API secret, so reporting the override alone would read as "false" on a
+    // perfectly good configuration.
+    `cashfree signing key available: ${Boolean(cashfreeWebhookSecret())}`,
     `razorpay webhook secret set: ${Boolean(env.RAZORPAY_WEBHOOK_SECRET)}`,
     `signature headers seen: ${signatureHeaders.join(", ") || "none"}`,
     `body bytes: ${Buffer.byteLength(rawBody, "utf8")}`,
