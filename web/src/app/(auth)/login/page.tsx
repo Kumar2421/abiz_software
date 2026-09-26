@@ -14,9 +14,18 @@ import { ApiError, api } from "@/lib/api";
 
 export default function LoginPage() {
   return (
-    <React.Suspense fallback={null}>
-      <LoginView />
-    </React.Suspense>
+    <div className="flex min-h-svh flex-col">
+      {/* LoginView reads search params, so it can only render on the client and
+          is prerendered as the null fallback. The footer sits outside that
+          boundary deliberately: its policy links must be in the static HTML,
+          where a crawler that does not run JavaScript can still find them. */}
+      <div className="flex-1">
+        <React.Suspense fallback={null}>
+          <LoginView />
+        </React.Suspense>
+      </div>
+      <SiteFooter />
+    </div>
   );
 }
 
@@ -62,17 +71,10 @@ function LoginView() {
   };
 
   return (
-    <div className="flex min-h-svh flex-col">
-      <div className="flex-1">
-        <ModernLoginSignup
-          onSubmit={handleSubmit}
-          onSocial={() => toast.info("Social sign-in is not enabled yet")}
-          onForgotPassword={handleForgot}
-        />
-      </div>
-      {/* Terms, privacy and refund policy have to be reachable from the page
-          a customer signs up on, not only from inside the app. */}
-      <SiteFooter />
-    </div>
+    <ModernLoginSignup
+      onSubmit={handleSubmit}
+      onSocial={() => toast.info("Social sign-in is not enabled yet")}
+      onForgotPassword={handleForgot}
+    />
   );
 }
