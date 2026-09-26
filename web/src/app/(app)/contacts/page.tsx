@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MessageSquare, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ExportMenu } from "@/components/export-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -227,6 +228,28 @@ export default function ContactsPage() {
             className="pl-8"
           />
         </div>
+
+        <ExportMenu
+          spec={() => ({
+            title: "Contacts",
+            fileName: "contacts",
+            // What is on screen, so a search filter narrows the download too.
+            rows: contacts ?? [],
+            columns: [
+              { header: "Name", value: (c) => c.name, width: 28, pdfWidth: 130 },
+              // "+" and the full number as text: a spreadsheet would otherwise
+              // show 9.19E+11 or drop the country code.
+              { header: "Phone", value: (c) => `+${c.phone}`, width: 18, pdfWidth: 100 },
+              { header: "Notes", value: (c) => c.notes ?? "", width: 44 },
+              {
+                header: "Added",
+                value: (c) => c.firstInteractionAt?.slice(0, 10) ?? "",
+                width: 14,
+                pdfWidth: 70,
+              },
+            ],
+          })}
+        />
 
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>

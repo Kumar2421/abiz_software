@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ExportMenu } from "@/components/export-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ApiError,
@@ -169,6 +170,39 @@ export default function AdminPage() {
         </TabsList>
 
         <TabsContent value="users">
+          <div className="mb-3 flex justify-end">
+            <ExportMenu
+              spec={() => ({
+                title: "Abiz users",
+                fileName: "abiz-users",
+                landscape: true,
+                rows: users ?? [],
+                columns: [
+                  { header: "Name", value: (u) => u.name, width: 24, pdfWidth: 90 },
+                  { header: "Email", value: (u) => u.email, width: 30, pdfWidth: 140 },
+                  { header: "Company", value: (u) => u.company_name, width: 26, pdfWidth: 110 },
+                  { header: "Billing phone", value: (u) => u.company_phone ?? "", width: 18, pdfWidth: 90 },
+                  { header: "Role", value: (u) => u.role, width: 10, pdfWidth: 45 },
+                  { header: "Plan", value: (u) => u.plan_name ?? "", width: 16, pdfWidth: 70 },
+                  {
+                    header: "Subscription",
+                    // Operators do not subscribe, so a status would mislead.
+                    value: (u) => (u.role === "admin" ? "" : u.subscription_status),
+                    width: 16,
+                    pdfWidth: 70,
+                  },
+                  {
+                    header: "Paid (INR)",
+                    value: (u) => Number(u.paid_paise) / 100,
+                    width: 12,
+                    pdfWidth: 55,
+                  },
+                  { header: "Account", value: (u) => u.status, width: 12, pdfWidth: 55 },
+                  { header: "Joined", value: (u) => u.created_at.slice(0, 10), width: 12, pdfWidth: 60 },
+                ],
+              })}
+            />
+          </div>
           <TableShell
             head={
               <>

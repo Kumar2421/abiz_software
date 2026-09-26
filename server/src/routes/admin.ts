@@ -14,6 +14,9 @@ adminRouter.get(
     const users = await query(
       `SELECT u.id, u.name, u.email, u.role, u.status, u.created_at,
               c.name AS company_name,
+              -- Billing phone: what a customer typed in Settings, not their
+              -- WhatsApp business number.
+              c.phone AS company_phone,
               COALESCE(s.status, 'TRIAL') AS subscription_status,
               s.trial_ends_at, s.activated_at,
               p.name AS plan_name,

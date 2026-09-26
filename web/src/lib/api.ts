@@ -212,6 +212,7 @@ export interface AdminUser {
   status: "active" | "suspended";
   created_at: string;
   company_name: string;
+  company_phone: string | null;
   subscription_status: SubscriptionStatus;
   trial_ends_at: string | null;
   activated_at: string | null;
