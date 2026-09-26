@@ -69,6 +69,20 @@ function methodLabel(method: PaymentEntity["payment_method"]): string | null {
   return Object.keys(method)[0] ?? null;
 }
 
+/**
+ * Cashfree wants a bare national number and rejects "+91…" formatting.
+ *
+ * Abiz stores whatever the owner typed, which is usually the number with a
+ * country code because that is how a WhatsApp business thinks about phone
+ * numbers. Indian mobiles are ten digits, and this product sells in INR
+ * through Indian gateways, so trimming to the last ten is safe here and would
+ * not be if Abiz ever billed outside India.
+ */
+function nationalNumber(input: string): string {
+  const digits = input.replace(/\D/g, "");
+  return digits.length > 10 ? digits.slice(-10) : digits;
+}
+
 /** Constant-time compare so a wrong signature leaks nothing through timing. */
 function signatureMatches(expected: string, received: string): boolean {
   const a = Buffer.from(expected, "utf8");
@@ -108,7 +122,7 @@ export const cashfreeGateway: PaymentGateway = {
           customer_id: params.customer.id,
           customer_name: params.customer.name,
           customer_email: params.customer.email,
-          customer_phone: params.customer.phone,
+          customer_phone: nationalNumber(params.customer.phone),
         },
         order_meta: { notify_url: params.notifyUrl },
         order_note: params.notes.plan_code,
