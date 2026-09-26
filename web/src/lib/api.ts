@@ -90,7 +90,7 @@ export interface ConnectionState {
 }
 
 export interface SettingsPayload {
-  company: { name: string; address: string };
+  company: { name: string; address: string; phone: string };
   whatsapp: {
     displayNumber: string;
     phoneNumberId: string;
@@ -209,8 +209,10 @@ export interface AdminUser {
 export interface AdminPayment {
   id: string;
   company_name: string;
-  razorpay_order_id: string;
-  razorpay_payment_id: string | null;
+  /** Which gateway took the money — 'razorpay' for everything before the switch. */
+  gateway: string;
+  gateway_order_id: string;
+  gateway_payment_id: string | null;
   amount_paise: number;
   currency: string;
   status: string;
@@ -341,7 +343,7 @@ export const api = {
 
   settings: () => request<SettingsPayload>("/api/settings"),
 
-  saveCompany: (body: { name: string; address?: string }) =>
+  saveCompany: (body: { name: string; address?: string; phone?: string }) =>
     put<{ ok: true }>("/api/settings/company", body),
 
   saveWhatsApp: (body: {

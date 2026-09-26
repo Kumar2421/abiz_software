@@ -14,89 +14,69 @@ import {
   paymentHistory,
   paymentWindow,
   planShape,
-  razorpayConfigured,
+  paymentsConfigured,
   trialDays,
   verifyCheckout,
-  webhookSignatureValid,
 } from "../services/billing.js";
+import { getGateway } from "../services/gateways/index.js";
 
 export const billingRouter = Router();
 
 /* ------------------------------------------------------------------ */
-/* Webhook — mounted before requireAuth: Razorpay has no session.      */
+/* Webhook — mounted before requireAuth: a gateway has no session.     */
 /* ------------------------------------------------------------------ */
 
 /**
- * The signature covers the exact bytes Razorpay sent. `express.json()` stashes
- * them on `req.rawBody` (see app.ts) because re-serialising the parsed object
- * would not reproduce them byte for byte.
+ * The signature covers the exact bytes the gateway sent. `express.json()`
+ * stashes them on `req.rawBody` (see app.ts) because re-serialising the parsed
+ * object would not reproduce them byte for byte.
  */
 billingRouter.post(
   "/webhook",
   asyncHandler(async (req, res) => {
-    const signature = req.header("x-razorpay-signature") ?? "";
+    const gateway = getGateway();
     const stashed = (req as Request & { rawBody?: Buffer }).rawBody;
     const rawBody = stashed ? stashed.toString("utf8") : JSON.stringify(req.body);
 
-    if (!webhookSignatureValid(rawBody, signature)) {
-      // 400, not 200: an unsigned call is not a Razorpay event at all.
+    // Header names differ per gateway, so hand over all of them rather than
+    // picking one here.
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (typeof value === "string") headers[name.toLowerCase()] = value;
+    }
+
+    if (!gateway.verifyWebhook(rawBody, headers)) {
+      // 400, not 200: an unsigned call is not a gateway event at all.
       res.status(400).json({ error: "invalid_signature" });
       return;
     }
 
-    // Acknowledge before doing the work — Razorpay retries on slow responses.
+    // Acknowledge before doing the work — gateways retry on slow responses.
     res.json({ ok: true });
 
-    const event = JSON.parse(rawBody) as {
-      event?: string;
-      payload?: {
-        payment?: {
-          entity?: {
-            id?: string;
-            order_id?: string;
-            method?: string;
-            error_description?: string;
-          };
-        };
-      };
-    };
-
-    const entity = event.payload?.payment?.entity;
-    if (!entity?.order_id) return;
+    const event = gateway.parseWebhook(rawBody);
+    if (!event.orderId || event.outcome === "ignored") return;
 
     const row = await queryOne<{ company_id: string }>(
-      `SELECT company_id FROM payments WHERE razorpay_order_id = $1`,
-      [entity.order_id],
+      `SELECT company_id FROM payments WHERE gateway_order_id = $1`,
+      [event.orderId],
     );
     if (!row) return; // Not an order we created.
 
-    switch (event.event) {
-      case "payment.captured":
-        await markPaid(
-          row.company_id,
-          entity.order_id,
-          entity.id ?? null,
-          "captured",
-          event,
-        );
-        break;
-      case "payment.authorized":
-        await markPaid(
-          row.company_id,
-          entity.order_id,
-          entity.id ?? null,
-          "authorized",
-          event,
-        );
-        break;
-      case "payment.failed":
-        await markFailed(
-          entity.order_id,
-          entity.error_description ?? "Payment failed",
-          event,
-        );
-        break;
+    const parsed: unknown = JSON.parse(rawBody);
+
+    if (event.outcome === "failed") {
+      await markFailed(event.orderId, event.error ?? "Payment failed", parsed);
+      return;
     }
+
+    await markPaid(
+      row.company_id,
+      event.orderId,
+      event.paymentId,
+      event.outcome,
+      parsed,
+    );
   }),
 );
 
@@ -125,7 +105,7 @@ billingRouter.get(
         ...planShape(row),
         availability: paymentWindow(subscription, row),
       })),
-      configured: razorpayConfigured(),
+      configured: paymentsConfigured(),
       // Platform admins run Abiz rather than subscribe to it, so the UI hides
       // billing for them instead of asking the operator to pay.
       billable: req.user!.role !== "admin",
@@ -157,6 +137,8 @@ billingRouter.post(
   "/verify",
   asyncHandler(async (req, res) => {
     const input = parseBody(
+      // Wire names stay Razorpay's: this is the shape its checkout hands the
+      // browser. A Cashfree verify will be a separate, smaller body.
       z.object({
         razorpay_order_id: z.string().min(4),
         razorpay_payment_id: z.string().min(4),

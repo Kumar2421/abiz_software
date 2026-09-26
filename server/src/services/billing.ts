@@ -1,8 +1,10 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-
 import { getDb, query, queryOne } from "../db/index.js";
-import { env } from "../env.js";
+import { env, publicUrl } from "../env.js";
 import { ApiError } from "../lib/http.js";
+import {
+  getGateway,
+  razorpayCheckoutSignatureValid,
+} from "./gateways/index.js";
 
 export type SubscriptionStatus =
   | "TRIAL"
@@ -32,8 +34,8 @@ interface SubscriptionRow {
   expires_at: string | null;
 }
 
-export const razorpayConfigured = () =>
-  Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+/** Whether the gateway currently selected has its keys. */
+export const paymentsConfigured = () => getGateway().configured();
 
 const PLAN_COLUMNS = `id, code, name, amount_paise, currency, period_days`;
 
@@ -254,25 +256,20 @@ export function paymentWindow(
 /* Razorpay                                                            */
 /* ------------------------------------------------------------------ */
 
-const RAZORPAY_API = "https://api.razorpay.com/v1";
-
-function authHeader(): string {
-  const raw = `${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`;
-  return `Basic ${Buffer.from(raw).toString("base64")}`;
-}
-
 /**
- * Creates a Razorpay order and records it as a pending payment.
+ * Creates an order with the active gateway and records it as pending.
  *
  * `planCode` comes from the customer's choice in the picker. The amount is
  * always read from the plans table here — never taken from the request — so a
  * tampered client cannot buy lifetime access at the monthly price.
  */
 export async function createOrder(companyId: string, planCode?: string | null) {
-  if (!razorpayConfigured()) {
+  const gateway = getGateway();
+
+  if (!gateway.configured()) {
     throw new ApiError(
       503,
-      "Payments are not configured yet. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.",
+      `Payments are not configured yet. Add the ${gateway.name} API keys.`,
       "payments_unconfigured",
     );
   }
@@ -283,47 +280,30 @@ export async function createOrder(companyId: string, planCode?: string | null) {
   const gate = paymentWindow(subscription, plan);
   if (!gate.open) throw new ApiError(409, gate.reason!, "payment_not_due");
 
-  const response = await fetch(`${RAZORPAY_API}/orders`, {
-    method: "POST",
-    headers: {
-      Authorization: authHeader(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      amount: plan.amount_paise,
-      currency: plan.currency,
-      // Lets Razorpay reject an accidental double-submit for the same company.
-      receipt: `abiz_${companyId.slice(0, 8)}_${Date.now()}`,
-      notes: { company_id: companyId, plan_code: plan.code },
-    }),
+  const customer = await billingCustomer(companyId);
+
+  const order = await gateway.createOrder({
+    orderId: `abiz_${companyId.slice(0, 8)}_${Date.now()}`,
+    amountPaise: plan.amount_paise,
+    currency: plan.currency,
+    customer,
+    notifyUrl: `${publicUrl}/api/billing/webhook`,
+    notes: { company_id: companyId, plan_code: plan.code },
   });
-
-  const payload = (await response.json()) as {
-    id?: string;
-    amount?: number;
-    currency?: string;
-    error?: { description?: string };
-  };
-
-  if (!response.ok || !payload.id) {
-    throw new ApiError(
-      502,
-      payload.error?.description ?? "Razorpay rejected the order",
-      "gateway_error",
-    );
-  }
 
   await query(
     `INSERT INTO payments
-       (company_id, plan_id, razorpay_order_id, amount_paise, currency, status, raw)
-     VALUES ($1, $2, $3, $4, $5, 'created', $6)`,
+       (company_id, plan_id, gateway, gateway_order_id, amount_paise, currency,
+        status, raw)
+     VALUES ($1, $2, $3, $4, $5, $6, 'created', $7)`,
     [
       companyId,
       plan.id,
-      payload.id,
+      gateway.name,
+      order.orderId,
       plan.amount_paise,
       plan.currency,
-      JSON.stringify(payload),
+      JSON.stringify(order),
     ],
   );
 
@@ -336,21 +316,42 @@ export async function createOrder(companyId: string, planCode?: string | null) {
   );
 
   return {
-    orderId: payload.id,
+    orderId: order.orderId,
     amountPaise: plan.amount_paise,
     currency: plan.currency,
-    keyId: env.RAZORPAY_KEY_ID!,
+    // Kept at the top level for the existing Razorpay client. New clients read
+    // `checkout`, which carries whatever this gateway needs.
+    keyId: env.RAZORPAY_KEY_ID ?? "",
+    checkout: order.checkout,
     planName: plan.name,
     planCode: plan.code,
     periodDays: plan.period_days,
   };
 }
 
-/** Constant-time compare so a wrong signature leaks nothing through timing. */
-function signatureMatches(expected: string, received: string): boolean {
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(received, "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
+/** The buyer, as the gateway wants to see them. */
+async function billingCustomer(companyId: string) {
+  const row = await queryOne<{
+    company_name: string;
+    phone: string | null;
+    name: string;
+    email: string;
+  }>(
+    `SELECT c.name AS company_name, c.phone, u.name, u.email
+       FROM companies c
+       JOIN users u ON u.company_id = c.id AND u.role = 'owner'
+      WHERE c.id = $1
+      ORDER BY u.created_at
+      LIMIT 1`,
+    [companyId],
+  );
+
+  return {
+    id: companyId,
+    name: row?.name ?? row?.company_name ?? "Customer",
+    email: row?.email ?? "",
+    phone: row?.phone ?? "",
+  };
 }
 
 /**
@@ -364,19 +365,15 @@ export async function verifyCheckout(params: {
   paymentId: string;
   signature: string;
 }) {
-  if (!razorpayConfigured()) {
+  if (!paymentsConfigured()) {
     throw new ApiError(503, "Payments are not configured", "payments_unconfigured");
   }
 
-  const expected = createHmac("sha256", env.RAZORPAY_KEY_SECRET!)
-    .update(`${params.orderId}|${params.paymentId}`)
-    .digest("hex");
-
-  if (!signatureMatches(expected, params.signature)) {
+  if (!razorpayCheckoutSignatureValid(params)) {
     await query(
       `UPDATE payments SET status = 'failed', error = 'Signature mismatch',
               updated_at = now()
-        WHERE razorpay_order_id = $1 AND company_id = $2`,
+        WHERE gateway_order_id = $1 AND company_id = $2`,
       [params.orderId, params.companyId],
     );
     throw ApiError.badRequest("Payment signature is invalid");
@@ -385,7 +382,7 @@ export async function verifyCheckout(params: {
   // The order must belong to this company; otherwise one tenant could activate
   // itself with another tenant's payment.
   const payment = await queryOne<{ id: string }>(
-    `SELECT id FROM payments WHERE razorpay_order_id = $1 AND company_id = $2`,
+    `SELECT id FROM payments WHERE gateway_order_id = $1 AND company_id = $2`,
     [params.orderId, params.companyId],
   );
   if (!payment) throw ApiError.notFound("Unknown order for this account");
@@ -406,13 +403,13 @@ export async function markPaid(
   await db.transaction(async (tx) => {
     await tx.query(
       `UPDATE payments
-          SET razorpay_payment_id = COALESCE($3, razorpay_payment_id),
+          SET gateway_payment_id = COALESCE($3, gateway_payment_id),
               status = $4,
               raw = COALESCE($5, raw),
               updated_at = now()
         -- $1 is the company, $2 the order: matching them the other way round
         -- compares a UUID column against an order id and throws.
-        WHERE company_id = $1 AND razorpay_order_id = $2`,
+        WHERE company_id = $1 AND gateway_order_id = $2`,
       [
         companyId,
         orderId,
@@ -427,7 +424,7 @@ export async function markPaid(
     const [plan] = await tx.query<{ id: string; period_days: number | null }>(
       `SELECT p.id, p.period_days
          FROM payments pay JOIN plans p ON p.id = pay.plan_id
-        WHERE pay.razorpay_order_id = $1`,
+        WHERE pay.gateway_order_id = $1`,
       [orderId],
     );
 
@@ -456,24 +453,15 @@ export async function markFailed(
     `UPDATE payments
         SET status = 'failed', error = $2, raw = COALESCE($3, raw),
             updated_at = now()
-      WHERE razorpay_order_id = $1`,
+      WHERE gateway_order_id = $1`,
     [orderId, reason, raw === undefined ? null : JSON.stringify(raw)],
   );
 }
 
-/** Razorpay signs the webhook body with the webhook secret, not the API key. */
-export function webhookSignatureValid(rawBody: string, signature: string) {
-  if (!env.RAZORPAY_WEBHOOK_SECRET) return false;
-  const expected = createHmac("sha256", env.RAZORPAY_WEBHOOK_SECRET)
-    .update(rawBody)
-    .digest("hex");
-  return signatureMatches(expected, signature);
-}
-
 export async function paymentHistory(companyId: string) {
   return query(
-    `SELECT razorpay_order_id AS "orderId",
-            razorpay_payment_id AS "paymentId",
+    `SELECT gateway_order_id AS "orderId",
+            gateway_payment_id AS "paymentId",
             amount_paise AS "amountPaise", currency, status, method, error,
             created_at AS "createdAt"
        FROM payments

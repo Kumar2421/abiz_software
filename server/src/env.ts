@@ -74,6 +74,16 @@ const schema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   SUPABASE_STORAGE_BUCKET: z.string().default("attachments"),
 
+  // Which gateway takes the money. Switching is an env change and a redeploy,
+  // and rolling a bad switch back costs the same — both stay shipped.
+  PAYMENT_GATEWAY: z.enum(["razorpay", "cashfree"]).default("razorpay"),
+
+  // Abiz's own public origin, used to hand gateways a webhook URL. Razorpay
+  // takes its webhook from the dashboard and ignores this; Cashfree wants one
+  // per order. Falls back to the first CLIENT_ORIGIN, which is the same host
+  // in the single-deploy setup.
+  PUBLIC_URL: z.string().optional(),
+
   // Razorpay. Leave blank until the account is ready — the billing routes then
   // report "not configured" instead of failing in a confusing way.
   RAZORPAY_KEY_ID: z.string().optional(),
@@ -140,3 +150,12 @@ if (env.NODE_ENV === "production" && env.STORAGE_DRIVER === "local") {
 
 /** Comma-separated origins are allowed so preview deploys can be added. */
 export const clientOrigins = env.CLIENT_ORIGIN.split(",").map((o) => o.trim());
+
+/**
+ * Where Abiz is reachable from the internet, for webhook URLs handed to a
+ * gateway. Defaults to the first allowed client origin: frontend and API share
+ * one host in the Netlify deploy, so that is the same address.
+ */
+export const publicUrl = (
+  env.PUBLIC_URL?.trim() || clientOrigins[0] || "http://localhost:4000"
+).replace(/\/+$/, "");

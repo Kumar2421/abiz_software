@@ -90,7 +90,7 @@ adminRouter.get(
   asyncHandler(async (_req, res) => {
     const payments = await query(
       `SELECT pay.id, c.name AS company_name,
-              pay.razorpay_order_id, pay.razorpay_payment_id,
+              pay.gateway, pay.gateway_order_id, pay.gateway_payment_id,
               pay.amount_paise, pay.currency, pay.status, pay.error,
               pay.created_at
          FROM payments pay

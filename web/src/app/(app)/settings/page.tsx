@@ -554,6 +554,25 @@ function SettingsView() {
                   }
                 />
               </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="company-phone">Billing phone</Label>
+                <Input
+                  id="company-phone"
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  value={data.company.phone}
+                  onChange={(event) =>
+                    setData({
+                      ...data,
+                      company: { ...data.company, phone: event.target.value },
+                    })
+                  }
+                />
+                <p className="text-xs text-muted-foreground">
+                  Where payment confirmations are sent. Not your WhatsApp
+                  business number.
+                </p>
+              </div>
 
               <Button
                 className="w-fit"
@@ -564,6 +583,7 @@ function SettingsView() {
                     await api.saveCompany({
                       name: data.company.name,
                       address: data.company.address || undefined,
+                      phone: data.company.phone || undefined,
                     });
                   })
                 }

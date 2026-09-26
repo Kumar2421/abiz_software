@@ -35,10 +35,11 @@ settingsRouter.get(
   asyncHandler(async (req, res) => {
     const companyId = req.user!.companyId;
 
-    const company = await queryOne<{ name: string; address: string | null }>(
-      `SELECT name, address FROM companies WHERE id = $1`,
-      [companyId],
-    );
+    const company = await queryOne<{
+      name: string;
+      address: string | null;
+      phone: string | null;
+    }>(`SELECT name, address, phone FROM companies WHERE id = $1`, [companyId]);
     const account = await queryOne<{
       display_number: string | null;
       phone_number_id: string | null;
@@ -61,7 +62,11 @@ settingsRouter.get(
     );
 
     res.json({
-      company: { name: company?.name ?? "", address: company?.address ?? "" },
+      company: {
+        name: company?.name ?? "",
+        address: company?.address ?? "",
+        phone: company?.phone ?? "",
+      },
       whatsapp: {
         displayNumber: account?.display_number ?? "",
         phoneNumberId: account?.phone_number_id ?? "",
@@ -90,15 +95,25 @@ settingsRouter.put(
       z.object({
         name: z.string().trim().min(2).max(120),
         address: z.string().trim().max(300).optional(),
+        // Needed at checkout by gateways that send the payment confirmation by
+        // SMS. Optional here so an existing company is never blocked from
+        // saving its name, and validated properly when it is actually used.
+        phone: z
+          .union([z.string().trim().min(6).max(25), z.literal("")])
+          .optional(),
       }),
       req.body,
     );
 
-    await query(`UPDATE companies SET name = $2, address = $3 WHERE id = $1`, [
-      req.user!.companyId,
-      input.name,
-      input.address ?? null,
-    ]);
+    await query(
+      `UPDATE companies SET name = $2, address = $3, phone = $4 WHERE id = $1`,
+      [
+        req.user!.companyId,
+        input.name,
+        input.address ?? null,
+        input.phone?.trim() || null,
+      ],
+    );
     res.json({ ok: true });
   }),
 );
