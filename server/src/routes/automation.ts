@@ -18,6 +18,7 @@ import {
   upsertAutomation,
 } from "../services/automation.js";
 import { env } from "../env.js";
+import { reconcilePendingPayments } from "../services/billing.js";
 
 export const automationRouter = Router();
 
@@ -79,7 +80,16 @@ automationRouter.post(
       throw ApiError.unauthorized("Bad cron secret");
     }
 
-    res.json(await runDueMessages());
+    // Reminders and payment reconciliation run on the same tick: both are
+    // "catch up on whatever time has made due". Reconciliation is awaited
+    // rather than fired off, because the response is the only record that it
+    // ran at all.
+    const [messages, payments] = await Promise.all([
+      runDueMessages(),
+      reconcilePendingPayments(),
+    ]);
+
+    res.json({ messages, payments });
   }),
 );
 

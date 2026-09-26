@@ -44,6 +44,17 @@
 # config = { path: [...] }` in api.mjs. Declaring redirects here as well would
 # rewrite the URL and hide the real path from Express.
 
+# Setting a primary domain in the Netlify UI does not stop the .netlify.app
+# subdomain serving the app, and this redirect does. It matters for payments:
+# the gateway whitelists app.anantio.com, so a customer who reaches the Netlify
+# URL — an old link, a search result — would pay from an unrecognised origin
+# and be declined.
+[[redirects]]
+  from = "https://abizapp.netlify.app/*"
+  to = "https://app.anantio.com/:splat"
+  status = 301
+  force = true
+
 # The legal pages live once, on the company site. A payment gateway's review
 # checks these paths on the domain that takes payment, and a customer will try
 # them there too, so the app domain answers rather than 404s. 301 rather than a

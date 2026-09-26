@@ -101,6 +101,7 @@ billingRouter.post(
       event.paymentId,
       event.outcome,
       parsed,
+      event.method,
     );
   }),
 );

@@ -431,7 +431,14 @@ export async function verifyByStatus(params: {
     );
   }
 
-  await markPaid(params.companyId, params.orderId, status.paymentId, "captured");
+  await markPaid(
+    params.companyId,
+    params.orderId,
+    status.paymentId,
+    "captured",
+    undefined,
+    status.method,
+  );
   return getSubscription(params.companyId);
 }
 
@@ -442,6 +449,8 @@ export async function markPaid(
   paymentId: string | null,
   status: "captured" | "authorized",
   raw?: unknown,
+  /** "upi", "card", "netbanking" — the first thing asked in a dispute. */
+  method?: string | null,
 ) {
   const db = await getDb();
   await db.transaction(async (tx) => {
@@ -450,6 +459,7 @@ export async function markPaid(
           SET gateway_payment_id = COALESCE($3, gateway_payment_id),
               status = $4,
               raw = COALESCE($5, raw),
+              method = COALESCE($6, method),
               updated_at = now()
         -- $1 is the company, $2 the order: matching them the other way round
         -- compares a UUID column against an order id and throws.
@@ -460,6 +470,7 @@ export async function markPaid(
         paymentId,
         status,
         raw === undefined ? null : JSON.stringify(raw),
+        method ?? null,
       ],
     );
 
@@ -500,6 +511,93 @@ export async function markFailed(
       WHERE gateway_order_id = $1`,
     [orderId, reason, raw === undefined ? null : JSON.stringify(raw)],
   );
+}
+
+/**
+ * Settles payments that were started but never resolved.
+ *
+ * Both confirmation paths can fail in ways nobody notices: the browser one if
+ * the customer closes the tab before verification returns, the webhook if it
+ * is misconfigured or the gateway gives up retrying. Either leaves a row at
+ * `created` while the money has actually been taken — the worst failure this
+ * system has, because the customer has paid and is still locked out, and
+ * nothing anywhere says so.
+ *
+ * Asking the gateway directly settles it. `graceMinutes` keeps this away from
+ * checkouts still in progress; a customer typing an OTP is not a stuck payment.
+ */
+export async function reconcilePendingPayments(options: {
+  graceMinutes?: number;
+  limit?: number;
+} = {}) {
+  const grace = options.graceMinutes ?? 10;
+  const limit = options.limit ?? 50;
+
+  const gateway = getGateway();
+
+  // Without keys every lookup fails identically, which would report a wall of
+  // errors that say nothing about the payments themselves.
+  if (!gateway.configured()) {
+    return { checked: 0, activated: 0, failed: 0, errors: 0, skipped: true };
+  }
+
+  const pending = await query<{
+    company_id: string;
+    gateway: string;
+    gateway_order_id: string;
+  }>(
+    `SELECT company_id, gateway, gateway_order_id
+       FROM payments
+      WHERE status = 'created'
+        AND created_at < now() - ($1 || ' minutes')::interval
+        -- Abandoned checkouts never resolve, and asking about every one of
+        -- them forever would grow without bound.
+        AND created_at > now() - interval '7 days'
+      ORDER BY created_at DESC
+      LIMIT $2`,
+    [String(grace), limit],
+  );
+
+  const result = { checked: 0, activated: 0, failed: 0, errors: 0, skipped: false };
+
+  for (const row of pending) {
+    // Only the gateway that took the order can answer for it.
+    if (row.gateway !== gateway.name) continue;
+    result.checked += 1;
+
+    try {
+      const status = await gateway.fetchStatus(row.gateway_order_id);
+
+      if (status.paid) {
+        await markPaid(
+          row.company_id,
+          row.gateway_order_id,
+          status.paymentId,
+          "captured",
+          undefined,
+          status.method,
+        );
+        result.activated += 1;
+        console.warn(
+          `[billing] reconciled a paid order neither path settled: ${row.gateway_order_id}`,
+        );
+      }
+      // Anything not paid is left alone: an order can still be completed, and
+      // marking it failed early would block a customer mid-payment.
+    } catch (error) {
+      // One unreachable order must not stop the rest being checked — but a
+      // silent count tells nobody which order or why, and this is the last
+      // line of defence for a payment that has already been taken.
+      result.errors += 1;
+      console.warn(
+        `[billing] could not reconcile ${row.gateway_order_id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  return result;
 }
 
 export async function paymentHistory(companyId: string) {
