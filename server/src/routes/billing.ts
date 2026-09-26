@@ -59,6 +59,19 @@ billingRouter.post(
     res.json({ ok: true });
 
     const event = gateway.parseWebhook(rawBody);
+
+    // A signed event we cannot read means the provider changed its payload
+    // shape — the one failure here that is silent and expensive, since the
+    // account never activates and nothing else records why. Gateways version
+    // webhooks separately from the API, so this can start happening without
+    // any deploy on our side.
+    if (!event.orderId && event.outcome !== "ignored") {
+      console.warn(
+        `[billing] ${gateway.name} webhook verified but no order id could be read from it`,
+      );
+      return;
+    }
+
     if (!event.orderId || event.outcome === "ignored") return;
 
     const row = await queryOne<{ company_id: string }>(
