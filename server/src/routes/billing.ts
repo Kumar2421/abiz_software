@@ -19,7 +19,7 @@ import {
   verifyByStatus,
   verifyCheckout,
 } from "../services/billing.js";
-import { getGateway } from "../services/gateways/index.js";
+import { gatewayForWebhook } from "../services/gateways/index.js";
 
 export const billingRouter = Router();
 
@@ -35,7 +35,6 @@ export const billingRouter = Router();
 billingRouter.post(
   "/webhook",
   asyncHandler(async (req, res) => {
-    const gateway = getGateway();
     const stashed = (req as Request & { rawBody?: Buffer }).rawBody;
     const rawBody = stashed ? stashed.toString("utf8") : JSON.stringify(req.body);
 
@@ -46,7 +45,11 @@ billingRouter.post(
       if (typeof value === "string") headers[name.toLowerCase()] = value;
     }
 
-    if (!gateway.verifyWebhook(rawBody, headers)) {
+    // Whichever gateway signed this, not whichever one is currently selling.
+    // Events for orders placed before a switch keep arriving for days.
+    const gateway = gatewayForWebhook(rawBody, headers);
+
+    if (!gateway) {
       // 400, not 200: an unsigned call is not a gateway event at all.
       res.status(400).json({ error: "invalid_signature" });
       return;

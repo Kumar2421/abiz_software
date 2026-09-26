@@ -216,10 +216,14 @@ export const cashfreeGateway: PaymentGateway = {
       paymentId: payment?.cf_payment_id ? String(payment.cf_payment_id) : null,
       method: methodLabel(payment?.payment_method),
       outcome,
+      // payment_message carries "ok" on success, which is not an error and
+      // would read as one wherever this is stored or logged.
       error:
-        event.data?.error_details?.error_description ??
-        payment?.payment_message ??
-        null,
+        outcome === "captured"
+          ? null
+          : (event.data?.error_details?.error_description ??
+            payment?.payment_message ??
+            null),
     };
   },
 };
