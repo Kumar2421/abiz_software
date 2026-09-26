@@ -19,7 +19,10 @@ import {
   verifyByStatus,
   verifyCheckout,
 } from "../services/billing.js";
-import { gatewayForWebhook } from "../services/gateways/index.js";
+import {
+  describeWebhookRejection,
+  gatewayForWebhook,
+} from "../services/gateways/index.js";
 
 export const billingRouter = Router();
 
@@ -50,6 +53,11 @@ billingRouter.post(
     const gateway = gatewayForWebhook(rawBody, headers);
 
     if (!gateway) {
+      // Gateways retry a 400 for hours, so a misconfiguration here is silent
+      // and repeated. Say which of the three causes it is.
+      console.warn(
+        `[billing] webhook rejected — ${describeWebhookRejection(headers, rawBody)}`,
+      );
       // 400, not 200: an unsigned call is not a gateway event at all.
       res.status(400).json({ error: "invalid_signature" });
       return;

@@ -42,3 +42,37 @@ export function gatewayForWebhook(
   }
   return null;
 }
+
+/**
+ * Why no gateway claimed a webhook, in terms safe to write to a log.
+ *
+ * A rejected webhook is otherwise a bare 400 with nothing to act on, and the
+ * gateway keeps retrying against it. The three real causes look identical from
+ * outside — no keys, a secret that does not match, or a missing signature
+ * header — so each is named. Secrets and signatures are never included: only
+ * whether they are present.
+ */
+export function describeWebhookRejection(
+  headers: Record<string, string>,
+  rawBody: string,
+): string {
+  const configured = Object.values(GATEWAYS)
+    .filter((gateway) => gateway.configured())
+    .map((gateway) => gateway.name);
+
+  if (configured.length === 0) {
+    return "no gateway has API keys configured";
+  }
+
+  const signatureHeaders = Object.keys(headers)
+    .filter((name) => name.includes("signature") || name.includes("timestamp"))
+    .sort();
+
+  return [
+    `configured gateways: ${configured.join(", ")}`,
+    `cashfree webhook secret set: ${Boolean(env.CASHFREE_WEBHOOK_SECRET)}`,
+    `razorpay webhook secret set: ${Boolean(env.RAZORPAY_WEBHOOK_SECRET)}`,
+    `signature headers seen: ${signatureHeaders.join(", ") || "none"}`,
+    `body bytes: ${Buffer.byteLength(rawBody, "utf8")}`,
+  ].join(" | ");
+}
