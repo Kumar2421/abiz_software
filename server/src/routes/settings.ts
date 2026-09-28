@@ -256,14 +256,66 @@ settingsRouter.put(
     const { website, ...rest } = input;
 
     const account = await connectedAccount(req.user!.companyId);
-    await updateBusinessProfile({
-      ...account,
-      patch: {
-        ...rest,
-        // Meta takes a list of up to two; the UI offers the one that matters.
-        ...(website === undefined ? {} : { websites: website ? [website] : [] }),
-      },
-    });
+
+    // The form always submits every field, including ones nobody touched.
+    // Sending all five to Meta on every save — even unchanged ones — turned
+    // out to be enough load on this endpoint to get every write in the batch
+    // rejected with a generic (#131000) error, reproduced against a live
+    // account: a single call with several empty fields failed on its very
+    // first attempt. Diffing against what Meta already has and forwarding
+    // only what actually changed cuts that load to what a save genuinely
+    // needs — often nothing at all, which skips the Meta call entirely.
+    const current = await getBusinessProfile(account);
+
+    const patch: Parameters<typeof updateBusinessProfile>[0]["patch"] = {};
+    if (rest.about !== undefined && rest.about !== current.about) {
+      patch.about = rest.about;
+    }
+    if (rest.address !== undefined && rest.address !== current.address) {
+      patch.address = rest.address;
+    }
+    if (
+      rest.description !== undefined &&
+      rest.description !== current.description
+    ) {
+      patch.description = rest.description;
+    }
+    if (rest.email !== undefined && rest.email !== current.email) {
+      patch.email = rest.email;
+    }
+    if (rest.vertical !== undefined && rest.vertical !== current.vertical) {
+      patch.vertical = rest.vertical;
+    }
+    if (website !== undefined) {
+      // Meta takes a list of up to two; the UI offers the one that matters.
+      const websites = website ? [website] : [];
+      const changed =
+        websites.length !== current.websites.length ||
+        websites.some((url, i) => url !== current.websites[i]);
+      if (changed) patch.websites = websites;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      res.json({ profile: current });
+      return;
+    }
+
+    try {
+      await updateBusinessProfile({ ...account, patch });
+    } catch (error) {
+      // Meta's own message for this failure ("(#131000) Something went
+      // wrong") names nothing useful. What is actually observed is that it
+      // clears after a short wait, so that is what gets said instead of
+      // repeating Meta's unhelpful text.
+      if (error instanceof ApiError && error.code === "meta_error") {
+        throw new ApiError(
+          502,
+          "Meta could not save this right now. Wait a minute and try again — this usually clears on its own.",
+          "meta_error",
+        );
+      }
+      throw error;
+    }
 
     res.json({ profile: await getBusinessProfile(account) });
   }),
