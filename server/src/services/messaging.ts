@@ -308,6 +308,14 @@ export async function sendMessage(
       WHERE id = $1`,
     [pending.id, result.status, result.waMessageId, result.error ?? null],
   );
+
+  // The row only becomes matchable by wa_message_id from this point on. A
+  // delivery receipt that arrived earlier and was buffered for exactly this
+  // reason gets applied now, before anything reads the row back out.
+  if (result.waMessageId) {
+    await applyPendingStatuses(companyId, result.waMessageId);
+  }
+
   const updated = await loadMessage(pending.id);
 
   if (result.status === "sent") {
@@ -388,6 +396,11 @@ export async function sendMediaMessage(params: {
       WHERE id = $1`,
     [pending.id, result.status, result.waMessageId, result.error ?? null],
   );
+
+  if (result.waMessageId) {
+    await applyPendingStatuses(params.companyId, result.waMessageId);
+  }
+
   const updated = await loadMessage(pending.id);
 
   if (result.status === "sent") {
@@ -522,7 +535,38 @@ async function maybeSendWelcome(companyId: string, conversationId: string) {
   await sendMessage(companyId, conversationId, body);
 }
 
-/** Applies a Meta delivery receipt (sent/delivered/read/failed) to a message. */
+/**
+ * How far along the tick progression a status is. Used to stop a late or
+ * out-of-order webhook event from moving a tick backward — Meta does not
+ * guarantee delivery order for these events, and a stale "sent" arriving
+ * after "read" was already recorded must not un-read the message.
+ */
+const STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+};
+
+/**
+ * Applies a Meta delivery receipt (sent/delivered/read/failed) to a message.
+ *
+ * Two things this guards against, both real:
+ *
+ *  1. Regression — a late "sent" arriving after "delivered" or "read" was
+ *     already recorded. The update only takes effect if the new status is
+ *     further along than the current one. "failed" is the one exception: it
+ *     is only applied while the message is still pending or sent — once
+ *     delivery or a read has been confirmed, a "failed" event after that is
+ *     almost certainly stale or about something else, and trusting the
+ *     stronger evidence (it visibly reached the phone) beats trusting it.
+ *
+ *  2. The matching race — sendMessage cannot write wa_message_id onto the row
+ *     until Meta's Send API responds, so a fast delivery receipt can arrive
+ *     before there is anything to match it against. Rather than dropping
+ *     that event, it is buffered in `pending_message_statuses` and replayed
+ *     by `applyPendingStatuses` the moment the row becomes matchable.
+ */
 export async function applyStatusUpdate(
   companyId: string,
   waMessageId: string,
@@ -533,13 +577,90 @@ export async function applyStatusUpdate(
     `UPDATE messages
         SET status = $3, error = COALESCE($4, error)
       WHERE company_id = $1 AND wa_message_id = $2
+        AND (
+          ($3 = 'failed' AND status IN ('pending', 'sent'))
+          OR (
+            $3 != 'failed'
+            AND COALESCE((SELECT rank FROM (VALUES
+                  ('pending', 0), ('sent', 1), ('delivered', 2), ('read', 3)
+                ) AS r(name, rank) WHERE r.name = status), 0)
+              < COALESCE((SELECT rank FROM (VALUES
+                  ('pending', 0), ('sent', 1), ('delivered', 2), ('read', 3)
+                ) AS r(name, rank) WHERE r.name = $3), 0)
+          )
+        )
       RETURNING id`,
     [companyId, waMessageId, status, error ?? null],
   );
-  if (!updated) return null;
 
-  const message = toMessage(await loadMessage(updated.id));
-  return message;
+  if (updated) {
+    return toMessage(await loadMessage(updated.id));
+  }
+
+  // Nothing changed. Either this status lost to a stronger one already on the
+  // row (no action needed — that status is exactly right already), or the row
+  // does not exist yet because sendMessage has not finished writing
+  // wa_message_id onto it. Only the second case needs buffering.
+  const exists = await queryOne<{ id: string }>(
+    `SELECT id FROM messages WHERE company_id = $1 AND wa_message_id = $2`,
+    [companyId, waMessageId],
+  );
+  if (exists) return null;
+
+  await query(
+    `INSERT INTO pending_message_statuses (company_id, wa_message_id, status, error)
+     VALUES ($1, $2, $3, $4)`,
+    [companyId, waMessageId, status, error ?? null],
+  );
+  return null;
+}
+
+/**
+ * Replays any status events that arrived before this message had a
+ * wa_message_id to be matched against. Call immediately after writing
+ * wa_message_id onto a message row — that is the instant it becomes
+ * matchable, and the instant any buffered event for it can finally apply.
+ */
+async function applyPendingStatuses(companyId: string, waMessageId: string) {
+  const pending = await query<{
+    status: MessageRow["status"];
+    error: string | null;
+  }>(
+    `SELECT status, error FROM pending_message_statuses
+      WHERE company_id = $1 AND wa_message_id = $2
+      ORDER BY received_at ASC`,
+    [companyId, waMessageId],
+  );
+  if (pending.length === 0) return;
+
+  // Same guarded path a live webhook would have taken — replaying them in
+  // arrival order means an out-of-order pair (e.g. "read" landing before
+  // "delivered") settles on the correct final state exactly as it would have
+  // live, via the same rank guard.
+  for (const row of pending) {
+    await applyStatusUpdate(companyId, waMessageId, row.status, row.error ?? undefined);
+  }
+
+  await query(
+    `DELETE FROM pending_message_statuses WHERE company_id = $1 AND wa_message_id = $2`,
+    [companyId, waMessageId],
+  );
+}
+
+/**
+ * Drops buffered status events old enough that they will never be claimed —
+ * the send that would have matched them either failed (no wa_message_id was
+ * ever produced to attach it to) or the reply that carried it was lost.
+ * Run periodically; nothing here is time-sensitive enough to need more.
+ */
+export async function cleanupStalePendingStatuses(olderThanHours = 24) {
+  const deleted = await query<{ id: string }>(
+    `DELETE FROM pending_message_statuses
+      WHERE received_at < now() - ($1 || ' hours')::interval
+      RETURNING id`,
+    [String(olderThanHours)],
+  );
+  return { deleted: deleted.length };
 }
 
 /**
