@@ -14,6 +14,11 @@ import {
   verifyPassword,
 } from "../lib/auth.js";
 import { ApiError, asyncHandler, parseBody } from "../lib/http.js";
+import {
+  mailerConfigured,
+  passwordResetEmail,
+  sendEmail,
+} from "../services/mailer.js";
 
 export const authRouter = Router();
 
@@ -273,8 +278,29 @@ authRouter.post(
     const resetUrl = `${clientOrigins[0]}/reset-password?token=${token}`;
 
     if (env.NODE_ENV === "production") {
-      // Wire an email provider here. Never return the token in production.
-      console.log(`[password-reset] send this link to ${email}: ${resetUrl}`);
+      if (mailerConfigured()) {
+        const content = passwordResetEmail({
+          resetUrl,
+          ttlMinutes: env.RESET_TOKEN_TTL_MINUTES,
+        });
+        const result = await sendEmail({ to: email, ...content });
+
+        // Never surfaced to the caller: the response is identical whether
+        // delivery succeeded or failed, so a mail-provider outage cannot be
+        // used to tell which addresses have accounts. The failure is real and
+        // needs a human, so it goes to the function log instead.
+        if (!result.sent) {
+          console.error(
+            `[password-reset] delivery to ${email} failed: ${result.reason}`,
+          );
+        }
+      } else {
+        // No mail provider configured. Same as before Resend was wired in —
+        // the link is logged so it can still be handed to someone by hand,
+        // rather than the request failing outright.
+        console.log(`[password-reset] send this link to ${email}: ${resetUrl}`);
+      }
+
       res.json({ ok: true, message });
       return;
     }

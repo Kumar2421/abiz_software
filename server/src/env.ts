@@ -44,6 +44,13 @@ const schema = z.object({
    */
   PASSWORD_RESET_MODE: z.enum(["direct", "link"]).default("direct"),
 
+  // Resend (https://resend.com). Both must be set for "link" mode to actually
+  // deliver mail — without them the reset link is only logged, same as before
+  // a mail provider existed. MAIL_FROM's domain must be verified in Resend
+  // ("Abiz <accounts@anantio.com>", not a raw address on its own).
+  RESEND_API_KEY: z.string().optional(),
+  MAIL_FROM: z.string().optional(),
+
   // Encrypts WhatsApp access tokens at rest. Generate 32 bytes of hex:
   //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
   // Changing this makes already-stored tokens unreadable — they must be
