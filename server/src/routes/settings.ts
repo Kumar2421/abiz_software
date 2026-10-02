@@ -161,23 +161,37 @@ settingsRouter.put(
   asyncHandler(async (req, res) => {
     const input = parseBody(whatsappSchema, req.body);
 
-    await query(
-      `UPDATE whatsapp_accounts
-          SET display_number = COALESCE($2, display_number),
-              phone_number_id = COALESCE($3, phone_number_id),
-              access_token = COALESCE($4, access_token),
-              verify_token = COALESCE($5, verify_token),
-              updated_at = now()
-        WHERE company_id = $1`,
-      [
-        req.user!.companyId,
-        input.displayNumber ? normalizePhone(input.displayNumber) : null,
-        input.phoneNumberId ?? null,
-        // Encrypted before it ever touches the database.
-        input.accessToken ? encryptSecret(input.accessToken) : null,
-        input.verifyToken ?? null,
-      ],
-    );
+    try {
+      await query(
+        `UPDATE whatsapp_accounts
+            SET display_number = COALESCE($2, display_number),
+                phone_number_id = COALESCE($3, phone_number_id),
+                access_token = COALESCE($4, access_token),
+                verify_token = COALESCE($5, verify_token),
+                updated_at = now()
+          WHERE company_id = $1`,
+        [
+          req.user!.companyId,
+          input.displayNumber ? normalizePhone(input.displayNumber) : null,
+          input.phoneNumberId ?? null,
+          // Encrypted before it ever touches the database.
+          input.accessToken ? encryptSecret(input.accessToken) : null,
+          input.verifyToken ?? null,
+        ],
+      );
+    } catch (error) {
+      // 23505 = unique_violation on whatsapp_accounts_phone_number_id_key —
+      // see the same guard in metaAuth.ts for why this must be a clear error
+      // rather than letting two accounts quietly share one number.
+      if ((error as { code?: string })?.code === "23505") {
+        throw new ApiError(
+          409,
+          "This Phone Number ID is already connected to a different Abiz account. Disconnect it there first, or contact support if this is unexpected.",
+          "number_already_connected",
+        );
+      }
+      throw error;
+    }
 
     // Status comes from an actual check, never from "the fields are filled in".
     const connection = await checkConnection(req.user!.companyId);

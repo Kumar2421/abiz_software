@@ -101,36 +101,52 @@ metaAuthRouter.post(
         ? null
         : registration.reason;
 
-    await query(
-      `UPDATE whatsapp_accounts
-          SET phone_number_id   = $2,
-              access_token      = $3,
-              waba_id           = $4,
-              business_id       = $5,
-              fb_user_id        = $6,
-              onboarding_method = 'embedded_signup',
-              display_number    = COALESCE($7, display_number),
-              verified_name     = COALESCE($8, verified_name),
-              registration_pin  = COALESCE($9, registration_pin),
-              registered_at     = CASE WHEN $10 THEN now() ELSE registered_at END,
-              registration_note = $11,
-              updated_at        = now()
-        WHERE company_id = $1`,
-      [
-        companyId,
-        onboarding.phoneNumberId,
-        encryptSecret(accessToken),
-        onboarding.wabaId,
-        input.businessId ?? null,
-        req.user!.id,
-        onboarding.displayNumber ? normalizePhone(onboarding.displayNumber) : null,
-        onboarding.verifiedName,
-        // Only overwrite the stored PIN when this registration actually used it.
-        registration.ok ? encryptSecret(pin) : null,
-        registration.ok || (!registration.ok && registration.alreadyRegistered),
-        registration.ok ? null : registration.reason,
-      ],
-    );
+    try {
+      await query(
+        `UPDATE whatsapp_accounts
+            SET phone_number_id   = $2,
+                access_token      = $3,
+                waba_id           = $4,
+                business_id       = $5,
+                fb_user_id        = $6,
+                onboarding_method = 'embedded_signup',
+                display_number    = COALESCE($7, display_number),
+                verified_name     = COALESCE($8, verified_name),
+                registration_pin  = COALESCE($9, registration_pin),
+                registered_at     = CASE WHEN $10 THEN now() ELSE registered_at END,
+                registration_note = $11,
+                updated_at        = now()
+          WHERE company_id = $1`,
+        [
+          companyId,
+          onboarding.phoneNumberId,
+          encryptSecret(accessToken),
+          onboarding.wabaId,
+          input.businessId ?? null,
+          req.user!.id,
+          onboarding.displayNumber ? normalizePhone(onboarding.displayNumber) : null,
+          onboarding.verifiedName,
+          // Only overwrite the stored PIN when this registration actually used it.
+          registration.ok ? encryptSecret(pin) : null,
+          registration.ok || (!registration.ok && registration.alreadyRegistered),
+          registration.ok ? null : registration.reason,
+        ],
+      );
+    } catch (error) {
+      // 23505 = unique_violation on whatsapp_accounts_phone_number_id_key.
+      // This number is already connected to a different Abiz account — two
+      // companies silently sharing one number is exactly how a customer's
+      // real message once ended up landing somewhere nobody was looking, so
+      // this must stop the connection rather than let it happen quietly.
+      if ((error as { code?: string })?.code === "23505") {
+        throw new ApiError(
+          409,
+          "This WhatsApp number is already connected to a different Abiz account. Disconnect it there first, or contact support if this is unexpected.",
+          "number_already_connected",
+        );
+      }
+      throw error;
+    }
 
     const connection = await checkConnection(companyId);
     res.json({ ok: true, connection, webhookWarning, registrationWarning });
