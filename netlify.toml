@@ -40,6 +40,26 @@
   # is unset, which never happens in production. Keep it out of the bundle.
   external_node_modules = ["@electric-sql/pglite"]
 
+# Every request this app serves makes several sequential round trips to
+# Postgres — a page load, a webhook, a single inbound message with an
+# auto-reply easily issues 15-20 of them in series. Measured from the
+# function's own network path, each one cost ~280ms while Supabase sat in
+# ap-southeast-2 (Sydney) and the function ran in iad (US East, Virginia) —
+# opposite sides of the planet. That is not a code bug; it is two services
+# that were never placed near each other. One inbound webhook even lost a
+# message mid-flight to a connection timeout on that same long-haul link.
+#
+# sin (Singapore) is the fix: close to Sydney already, and — once the
+# database itself moves to a Supabase project in ap-southeast-1 — the two
+# halves sit in the same region. It also happens to be the nearest available
+# Netlify region to India, where this product's actual customers are, so the
+# dashboard itself gets faster too, not only the webhook path.
+[functions.api]
+  region = "sin"
+
+[functions.reconcile]
+  region = "sin"
+
 # /api/* and /health are claimed by the function itself, via `export const
 # config = { path: [...] }` in api.mjs. Declaring redirects here as well would
 # rewrite the URL and hide the real path from Express.
