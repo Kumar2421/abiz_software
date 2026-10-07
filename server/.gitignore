@@ -6,3 +6,7 @@ dist/
 
 # Generated from src/db/migrations/*.sql at build time.
 src/db/migrations.generated.ts
+
+# Throwaway debugging scripts (scratch-*.ts) — never meant to be committed.
+scratch-*.ts
+scratch-*.mjs
