@@ -8,7 +8,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
-const POLL_MS = 30_000;
+// Keep notification detection close to inbox refresh without introducing a
+// realtime service. Background tabs may still be throttled by the browser.
+const POLL_MS = 5_000;
 
 /**
  * App-wide inbound-message watcher. This intentionally uses the existing
@@ -28,7 +30,7 @@ export function IncomingMessageNotifications() {
   const [unreadCount, setUnreadCount] = React.useState(0);
 
   const enableNotifications = async () => {
-    if (!("Notification" in window)) {
+    if (!( "Notification" in window)) {
       toast.error("This browser does not support desktop notifications");
       setPermission("unsupported");
       return;
