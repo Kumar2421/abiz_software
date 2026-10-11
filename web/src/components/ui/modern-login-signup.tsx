@@ -217,8 +217,6 @@ export interface ModernLoginSignupProps {
   onModeChange?: (mode: AuthMode) => void;
   onSubmit?: (mode: AuthMode, values: AuthFormValues) => void | Promise<void>;
   onSocial?: (provider: "google" | "apple") => void;
-  /** Receives whatever is currently typed in the email field. */
-  onForgotPassword?: (email: string) => void;
   brandName?: string;
   className?: string;
 }
@@ -229,7 +227,6 @@ export function ModernLoginSignup({
   onModeChange,
   onSubmit,
   onSocial,
-  onForgotPassword,
   brandName = "Abiz",
   className,
 }: ModernLoginSignupProps) {
@@ -339,16 +336,6 @@ export function ModernLoginSignup({
               className="border-white/15 bg-black text-white placeholder:text-neutral-500"
               toggleClassName="text-neutral-400 hover:text-white"
             />
-
-            {isLogin && (
-              <button
-                type="button"
-                onClick={() => onForgotPassword?.(email)}
-                className="-mt-0.5 self-end text-xs text-neutral-400 hover:text-white"
-              >
-                Forgot password?
-              </button>
-            )}
 
             <Button
               type="submit"
