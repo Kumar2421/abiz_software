@@ -210,8 +210,8 @@ export default function ContactsPage() {
   if (contacts === null) return <TableSkeleton />;
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden p-6">
-      <header className="mb-4 flex flex-wrap items-center gap-3">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-6">
+      <header className="mb-4 flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <div>
           <h1 className="text-xl font-semibold">Contacts</h1>
           <p className="text-sm text-muted-foreground">
@@ -219,7 +219,7 @@ export default function ContactsPage() {
           </p>
         </div>
 
-        <div className="relative ml-auto w-full max-w-xs">
+        <div className="relative w-full sm:ml-auto sm:max-w-xs">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
@@ -229,6 +229,7 @@ export default function ContactsPage() {
           />
         </div>
 
+        <div className="flex w-full flex-wrap items-center gap-2 sm:ml-0 sm:w-auto">
         <ExportMenu
           spec={() => ({
             title: "Contacts",
@@ -290,9 +291,10 @@ export default function ContactsPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </header>
 
-      <div className="flex-1 overflow-y-auto rounded-lg border bg-card">
+      <div className="hidden min-h-0 flex-1 overflow-auto rounded-lg border bg-card md:block">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-card">
             <tr className="border-b text-left text-xs text-muted-foreground">
@@ -376,6 +378,63 @@ export default function ContactsPage() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto md:hidden">
+        {contacts.length === 0 ? (
+          <div className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+            No contacts yet.
+          </div>
+        ) : (
+          contacts.map((contact) => (
+            <article key={contact.id} className="rounded-lg border bg-card p-3">
+              <div className="flex min-w-0 items-start gap-3">
+                <Avatar className="mt-0.5 size-9 shrink-0">
+                  <AvatarFallback className="text-xs">
+                    {initials(contact.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <h2 className="break-words font-medium">{contact.name}</h2>
+                  <p className="mt-1 break-all text-sm text-muted-foreground">
+                    {formatPhone(contact.phone)}
+                  </p>
+                  {contact.notes && (
+                    <p className="mt-2 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                      {contact.notes}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end gap-1 border-t pt-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => openChat(contact)}
+                  aria-label={`Message ${contact.name}`}
+                >
+                  <MessageSquare className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setEditing(contact)}
+                  aria-label={`Edit ${contact.name}`}
+                >
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => remove(contact)}
+                  aria-label={`Delete ${contact.name}`}
+                >
+                  <Trash2 className="size-4 text-destructive" />
+                </Button>
+              </div>
+            </article>
+          ))
+        )}
       </div>
 
       {editing && (
