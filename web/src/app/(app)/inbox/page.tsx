@@ -29,14 +29,10 @@ const EMPTY_ACCOUNT: WhatsAppAccount = {
 };
 
 /**
- * How often the inbox re-checks for new messages while the tab is visible.
- *
- * There is no websocket: the API runs as a serverless function, so every poll
- * is a billable invocation. 30s keeps a single dashboard under ~30k calls a
- * month at 30s. A 10s interval makes incoming/outgoing activity reorder the
- * list promptly without requiring a websocket; user actions still refresh at once.
+ * Refresh the inbox frequently enough to keep inbound messages responsive.
+ * Polling is used because the API is deployed serverlessly without a websocket.
  */
-const POLL_MS = 10_000;
+const POLL_MS = 5_000;
 
 export default function InboxPage() {
   return (
@@ -122,7 +118,7 @@ function InboxView() {
       clearTimeout(timer);
     };
     // `unlocked` is here so paying in another tab clears the lock at once,
-    // rather than leaving the inbox locked until the next 30-second poll.
+    // rather than leaving the inbox locked until the next poll.
   }, [folder, query, router, refreshKey, unlocked]);
 
   /* ---------------- open thread ------------------------------------------ */
