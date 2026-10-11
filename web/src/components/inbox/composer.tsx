@@ -197,7 +197,7 @@ export function Composer({
   const canSend = Boolean(file) || value.trim().length > 0;
 
   return (
-    <div className={cn("border-t bg-card p-3", className)}>
+    <div className={cn("shrink-0 border-t bg-card p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] sm:p-3", className)}>
       {file && <AttachmentPreview file={file} onClear={() => setFile(null)} />}
 
       {recording && (
