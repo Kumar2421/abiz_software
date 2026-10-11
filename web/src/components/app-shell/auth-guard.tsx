@@ -28,7 +28,13 @@ export function useSession() {
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = React.useRef(pathname);
   const [session, setSession] = React.useState<SessionState | null>(null);
+
+  // Track navigation separately so the auth request isn't repeated per route.
+  React.useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -39,7 +45,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         if (!cancelled) setSession(me);
       } catch {
         if (cancelled) return;
-        const next = encodeURIComponent(pathname);
+        const next = encodeURIComponent(pathnameRef.current);
         router.replace(`/login?next=${next}`);
       }
     })();
@@ -47,7 +53,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [router, pathname]);
+  }, [router]);
 
   if (!session) {
     return (
