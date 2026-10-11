@@ -21,6 +21,7 @@ export function IncomingMessageNotifications() {
   const initialized = React.useRef(false);
   const inFlight = React.useRef(false);
   const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("default");
+  const [unreadCount, setUnreadCount] = React.useState(0);
 
   const enableNotifications = async () => {
     if (!("Notification" in window)) {
@@ -48,6 +49,7 @@ export function IncomingMessageNotifications() {
         if (disposed || result.locked) return;
 
         const current = new Map<string, { at: string; unread: number }>();
+        setUnreadCount(result.conversations.reduce((total, conversation) => total + conversation.unreadCount, 0));
         for (const conversation of result.conversations) {
           const at = conversation.lastMessageAt;
           current.set(conversation.id, { at, unread: conversation.unreadCount });
@@ -108,22 +110,30 @@ export function IncomingMessageNotifications() {
     };
   }, [router]);
 
-  if (permission === "unsupported" || permission === "denied" || permission === "granted") {
-    return null;
-  }
-
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2">
       <Button
         type="button"
-        size="sm"
+        size="icon"
         variant="outline"
-        onClick={enableNotifications}
-        aria-label="Enable desktop notifications"
+        className="relative rounded-full shadow-md"
+        onClick={() => router.push("/inbox?folder=unread")}
+        aria-label={unreadCount > 0 ? `Inbox, ${unreadCount} unread messages` : "Open inbox"}
+        title={unreadCount > 0 ? `${unreadCount} unread messages` : "Open inbox"}
       >
-        {permission === "default" ? <Bell className="mr-2 size-4" /> : <BellRing className="mr-2 size-4" />}
-        Enable notifications
+        <Bell className="size-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
       </Button>
+      {permission !== "unsupported" && permission !== "denied" && permission !== "granted" && (
+        <Button type="button" size="sm" variant="outline" onClick={enableNotifications}>
+          <BellRing className="mr-2 size-4" />
+          Enable desktop notifications
+        </Button>
+      )}
     </div>
   );
 }
