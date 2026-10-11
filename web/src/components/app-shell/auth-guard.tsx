@@ -31,9 +31,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathnameRef = React.useRef(pathname);
   const [session, setSession] = React.useState<SessionState | null>(null);
 
-  // Keep the redirect target current without revalidating the session on each
-  // client-side route transition.
-  pathnameRef.current = pathname;
+  // Track navigation separately so the auth request isn't repeated per route.
+  React.useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   React.useEffect(() => {
     let cancelled = false;
