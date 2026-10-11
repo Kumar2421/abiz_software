@@ -187,7 +187,7 @@ authRouter.post(
       `UPDATE users SET password_hash = $2 WHERE id = $1 RETURNING id`,
       [req.user!.id, await hashPassword(input.newPassword)],
     );
-    if (!updated) throw ApiError.internal("Could not save the new password");
+    if (!updated) throw new ApiError(500, "Could not save the new password", "internal");
 
     res.json({ ok: true });
   }),
