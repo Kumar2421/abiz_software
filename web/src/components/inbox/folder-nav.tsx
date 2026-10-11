@@ -4,7 +4,7 @@ import { Archive, Inbox, MailOpen, Search } from "lucide-react";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { Input } from "@/components/ui/input";
-import { formatPhone } from "@/lib/format";\nimport { cn } from "@/lib/utils";
+import { formatPhone } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { InboxFolder, WhatsAppAccount } from "@/lib/types";
 
