@@ -173,14 +173,14 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
       <div className="mx-auto max-w-2xl">
         <h1 className="text-xl font-semibold">Set up Abiz</h1>
         <p className="mb-6 text-sm text-muted-foreground">
           Activate your account, connect WhatsApp, and your inbox is live.
         </p>
 
-        <ol className="mb-6 flex items-center gap-2">
+        <ol className="mb-6 flex flex-wrap items-center gap-2 sm:flex-nowrap">
           {STEPS.map((label, index) => (
             <li key={label} className="flex flex-1 items-center gap-2">
               <span

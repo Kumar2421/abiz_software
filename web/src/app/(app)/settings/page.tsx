@@ -271,7 +271,7 @@ function SettingsView() {
       .replaceAll("{{address}}", data.company.address || "");
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
       <header className="mb-6 flex items-center gap-3">
         <h1 className="text-xl font-semibold">{t("settings.title")}</h1>
         <Button
@@ -288,8 +288,8 @@ function SettingsView() {
         </Button>
       </header>
 
-      <Tabs defaultValue={initialTab} className="max-w-3xl">
-        <TabsList>
+      <Tabs defaultValue={initialTab} className="w-full max-w-3xl">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="whatsapp">{t("settings.whatsapp")}</TabsTrigger>
           <TabsTrigger value="welcome">{t("settings.welcome")}</TabsTrigger>
           {billable && (
