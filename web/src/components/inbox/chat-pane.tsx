@@ -81,8 +81,8 @@ export function ChatPane({
   }
 
   return (
-    <section className="flex min-w-0 flex-1 flex-col bg-card">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+    <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-card">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-2 sm:gap-3 sm:px-4">
         {onBack && (
           <Button
             variant="ghost"
@@ -160,8 +160,8 @@ export function ChatPane({
         </p>
       )}
 
-      <ScrollArea className="flex-1 bg-shell">
-        <div className="flex flex-col gap-2 p-4">
+      <ScrollArea className="min-h-0 flex-1 bg-shell">
+        <div className="flex flex-col gap-2 p-3 sm:p-4">
           {groups.map((group) => (
             <React.Fragment key={group.label}>
               <div className="my-2 flex justify-center">
