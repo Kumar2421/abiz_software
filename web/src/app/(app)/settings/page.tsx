@@ -242,7 +242,8 @@ function SettingsView() {
     setSaving(key);
     try {
       await action();
-      toast.success("Saved");
+      toast.success(key === "password" ? "Password changed successfully" : "Saved");
+      return true;
     } catch (error) {
       if (error instanceof ApiError && error.issues.length) {
         // Field-level messages render under their inputs, not in a toast.
@@ -252,11 +253,12 @@ function SettingsView() {
           ),
         );
         toast.error("Please fix the highlighted fields");
-        return;
+        return false;
       }
       toast.error(
         error instanceof Error ? error.message : "Could not save",
       );
+      return false;
     } finally {
       setSaving(null);
     }
@@ -596,13 +598,17 @@ function SettingsView() {
                 onSubmit={(event) => {
                   event.preventDefault();
                   const form = new FormData(event.currentTarget);
-                  void run("password", () =>
-                    api.changePassword({
-                      currentPassword: String(form.get("currentPassword")),
-                      newPassword: String(form.get("newPassword")),
-                    }),
-                  );
-                  event.currentTarget.reset();
+                  const formElement = event.currentTarget;
+                  void (async () => {
+                    const saved = await run("password", () =>
+                      api.changePassword({
+                        currentPassword: String(form.get("currentPassword")),
+                        newPassword: String(form.get("newPassword")),
+                      }),
+                    );
+                    // Keep the fields intact on failure so the user can retry.
+                    if (saved) formElement.reset();
+                  })();
                 }}
               >
                 <p className="text-sm font-medium">Change password</p>
