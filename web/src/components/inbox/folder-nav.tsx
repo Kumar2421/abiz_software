@@ -4,7 +4,7 @@ import { Archive, Inbox, MailOpen, Search } from "lucide-react";
 
 import { StatusPill } from "@/components/app-shell/status-pill";
 import { Input } from "@/components/ui/input";
-import { formatPhone } from "@/lib/format";
+import { formatPhone } from "@/lib/format";\nimport { cn } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import type { InboxFolder, WhatsAppAccount } from "@/lib/types";
 
@@ -30,7 +30,7 @@ export function FolderNav({
   onQueryChange: (value: string) => void;
 }) {
   return (
-    <aside className="hidden w-60 shrink-0 flex-col gap-4 border-r bg-card p-3 md:flex">
+    <aside className={cn("flex w-full shrink-0 flex-col gap-3 border-b bg-card p-3 md:w-60 md:gap-4 md:border-r md:border-b-0", className)}>
       <div className="rounded-lg border p-3">
         <StatusPill status={account.status} className="border-0 px-0" />
         <p className="mt-1 text-sm font-medium">
