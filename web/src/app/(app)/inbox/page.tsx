@@ -275,6 +275,7 @@ function InboxView() {
         onSelect={setFolder}
         query={query}
         onQueryChange={setQuery}
+        className={cn(selected && "hidden md:flex")}
       />
 
       <ConversationList
