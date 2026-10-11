@@ -27,7 +27,10 @@ contactsRouter.get(
     }
 
     const rows = await query<ContactRow>(
-      `SELECT * FROM contacts WHERE company_id = $1 ${filter} ORDER BY name ASC`,
+      `SELECT ct.* FROM contacts ct
+       LEFT JOIN conversations c ON c.contact_id = ct.id AND c.company_id = ct.company_id
+      WHERE ct.company_id = $1 ${filter.replaceAll("name", "ct.name").replaceAll("phone", "ct.phone")}
+      ORDER BY c.last_message_at DESC NULLS LAST, ct.created_at DESC, ct.name ASC`,
       params,
     );
     res.json({ contacts: rows.map(toContact) });
