@@ -161,6 +161,20 @@ export default function ContactsPage() {
     return () => clearTimeout(timer);
   }, [query, load]);
 
+  React.useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") void load(query.trim() || undefined);
+    };
+    const timer = window.setInterval(refresh, 10_000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
+  }, [query, load]);
+
   const create = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
