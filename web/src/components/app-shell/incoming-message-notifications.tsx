@@ -20,7 +20,11 @@ export function IncomingMessageNotifications() {
   const previous = React.useRef<Map<string, { at: string; unread: number }>>(new Map());
   const initialized = React.useRef(false);
   const inFlight = React.useRef(false);
-  const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("default");
+  const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">(() =>
+    typeof window !== "undefined" && "Notification" in window
+      ? Notification.permission
+      : "unsupported",
+  );
   const [unreadCount, setUnreadCount] = React.useState(0);
 
   const enableNotifications = async () => {
