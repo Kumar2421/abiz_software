@@ -41,9 +41,13 @@ export class ApiError extends Error {
 const GET_CACHE_TTL_MS = 2_000;
 const getCache = new Map<string, { expiresAt: number; payload: unknown }>();
 const getInFlight = new Map<string, Promise<unknown>>();
+let cacheGeneration = 0;
 
 function invalidateGetCache() {
+  cacheGeneration += 1;
   getCache.clear();
+  // A read started before a write must not be reused by a later caller.
+  getInFlight.clear();
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -66,6 +70,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     invalidateGetCache();
   }
 
+  const generationAtStart = cacheGeneration;
   const run = async (): Promise<T> => {
     const response = await fetch(url, {
       ...init,
@@ -92,7 +97,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       );
     }
 
-    if (cacheable) {
+    if (cacheable && generationAtStart === cacheGeneration) {
       getCache.set(cacheKey, {
         expiresAt: Date.now() + GET_CACHE_TTL_MS,
         payload,
@@ -101,7 +106,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     return payload as T;
   };
 
-  if (!cacheable) return run();
+  if (!cacheable) {
+    try {
+      return await run();
+    } finally {
+      // Clear again after the write completes so concurrent reads cannot leave
+      // stale list/detail data cached during the mutation.
+      invalidateGetCache();
+    }
+  }
 
   const pending = run();
   getInFlight.set(cacheKey, pending);
