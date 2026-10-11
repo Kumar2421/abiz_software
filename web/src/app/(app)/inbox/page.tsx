@@ -36,7 +36,7 @@ const POLL_MS = 5_000;
 
 export default function InboxPage() {
   return (
-    <React.Suspense fallback={null}>
+    <React.Suspense fallback={<InboxSkeleton />}>
       <InboxView />
     </React.Suspense>
   );
