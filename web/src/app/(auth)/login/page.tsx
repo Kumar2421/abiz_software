@@ -63,18 +63,10 @@ function LoginView() {
     }
   };
 
-  // The reset page asks for the email itself, so this only needs to send the
-  // user there — prefilling what they already typed.
-  const handleForgot = (email: string) => {
-    const query = email.includes("@") ? `?email=${encodeURIComponent(email)}` : "";
-    router.push(`/reset-password${query}`);
-  };
-
   return (
     <ModernLoginSignup
       onSubmit={handleSubmit}
       onSocial={() => toast.info("Social sign-in is not enabled yet")}
-      onForgotPassword={handleForgot}
     />
   );
 }
