@@ -41,7 +41,7 @@ export function MobileNav() {
       <ul className="mx-auto flex min-h-14 max-w-lg items-stretch justify-around">
         {items.map(({ href, key, icon: Icon }) => {
           const active = pathname.startsWith(href);
-          const label = t(key);
+          const label = t(key as "nav.inbox" | "nav.contacts" | "nav.dashboard" | "nav.admin" | "nav.settings");
 
           return (
             <li key={href} className="flex min-w-0 flex-1">
