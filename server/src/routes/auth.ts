@@ -1,10 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
-
 import { Router } from "express";
 import { z } from "zod";
 
 import { getDb, query, queryOne } from "../db/index.js";
-import { clientOrigins, env } from "../env.js";
+import { env } from "../env.js";
 import {
   clearAuthCookie,
   hashPassword,
@@ -14,11 +12,6 @@ import {
   verifyPassword,
 } from "../lib/auth.js";
 import { ApiError, asyncHandler, parseBody } from "../lib/http.js";
-import {
-  mailerConfigured,
-  passwordResetEmail,
-  sendEmail,
-} from "../services/mailer.js";
 
 export const authRouter = Router();
 
@@ -194,159 +187,6 @@ authRouter.post(
       req.user!.id,
       await hashPassword(input.newPassword),
     ]);
-
-    res.json({ ok: true });
-  }),
-);
-
-/** Only the hash is stored, so the table alone cannot reset any password. */
-const hashToken = (token: string) =>
-  createHash("sha256").update(token).digest("hex");
-
-authRouter.post(
-  "/forgot-password",
-  asyncHandler(async (req, res) => {
-    const { email } = parseBody(
-      z.object({ email: z.string().trim().min(1).max(200) }),
-      req.body,
-    );
-
-    const user = await queryOne<{ id: string }>(
-      `SELECT id FROM users WHERE lower(email) = lower($1) AND status = 'active'`,
-      [email],
-    );
-
-    const message = "If that account exists, a reset link has been sent.";
-
-    if (!user) {
-      // "direct" mode has to say whether the account exists, or the form
-      // cannot decide whether to show the password fields. "link" mode keeps
-      // the answer uniform so addresses cannot be enumerated.
-      res.json(
-        env.PASSWORD_RESET_MODE === "direct"
-          ? { ok: true, exists: false, message: "No account uses that email address." }
-          : { ok: true, message },
-      );
-      return;
-    }
-
-    // Throttle: repeated requests for one account are the shape of an attack,
-    // and in "direct" mode each one hands out a usable token.
-    const recent = await queryOne<{ count: string }>(
-      `SELECT count(*)::text AS count FROM password_resets
-        WHERE user_id = $1 AND created_at > now() - interval '15 minutes'`,
-      [user.id],
-    );
-    if (Number(recent?.count ?? 0) >= 5) {
-      throw new ApiError(
-        429,
-        "Too many reset attempts. Try again in 15 minutes.",
-        "rate_limited",
-      );
-    }
-
-    const token = randomBytes(32).toString("hex");
-    const expiresAt = new Date(
-      Date.now() + env.RESET_TOKEN_TTL_MINUTES * 60_000,
-    );
-
-    // Any older link for this user stops working the moment a new one is made.
-    await query(
-      `UPDATE password_resets SET used_at = now()
-        WHERE user_id = $1 AND used_at IS NULL`,
-      [user.id],
-    );
-    await query(
-      `INSERT INTO password_resets (user_id, token_hash, expires_at)
-       VALUES ($1, $2, $3)`,
-      [user.id, hashToken(token), expiresAt.toISOString()],
-    );
-
-    if (env.PASSWORD_RESET_MODE === "direct") {
-      // Deliberate product decision: the token goes straight back so the same
-      // card can move on to the new-password fields. Anyone who knows a
-      // registered address can therefore take over that account.
-      res.json({
-        ok: true,
-        exists: true,
-        resetToken: token,
-        expiresAt: expiresAt.toISOString(),
-      });
-      return;
-    }
-
-    const resetUrl = `${clientOrigins[0]}/reset-password?token=${token}`;
-
-    if (env.NODE_ENV === "production") {
-      if (mailerConfigured()) {
-        const content = passwordResetEmail({
-          resetUrl,
-          ttlMinutes: env.RESET_TOKEN_TTL_MINUTES,
-        });
-        const result = await sendEmail({ to: email, ...content });
-
-        // Never surfaced to the caller: the response is identical whether
-        // delivery succeeded or failed, so a mail-provider outage cannot be
-        // used to tell which addresses have accounts. The failure is real and
-        // needs a human, so it goes to the function log instead.
-        if (!result.sent) {
-          console.error(
-            `[password-reset] delivery to ${email} failed: ${result.reason}`,
-          );
-        }
-      } else {
-        // No mail provider configured. Same as before Resend was wired in —
-        // the link is logged so it can still be handed to someone by hand,
-        // rather than the request failing outright.
-        console.log(`[password-reset] send this link to ${email}: ${resetUrl}`);
-      }
-
-      res.json({ ok: true, message });
-      return;
-    }
-
-    res.json({
-      ok: true,
-      message,
-      devResetUrl: resetUrl,
-      expiresAt: expiresAt.toISOString(),
-    });
-  }),
-);
-
-authRouter.post(
-  "/reset-password",
-  asyncHandler(async (req, res) => {
-    const input = parseBody(
-      z.object({
-        token: z.string().min(16),
-        newPassword: z.string().min(8).max(200),
-      }),
-      req.body,
-    );
-
-    const row = await queryOne<{ id: string; user_id: string }>(
-      `SELECT id, user_id FROM password_resets
-        WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()`,
-      [hashToken(input.token)],
-    );
-
-    if (!row) {
-      throw ApiError.badRequest("This reset link is invalid or has expired");
-    }
-
-    const passwordHash = await hashPassword(input.newPassword);
-    const db = await getDb();
-    await db.transaction(async (tx) => {
-      await tx.query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
-        row.user_id,
-        passwordHash,
-      ]);
-      await tx.query(
-        `UPDATE password_resets SET used_at = now() WHERE id = $1`,
-        [row.id],
-      );
-    });
 
     res.json({ ok: true });
   }),
