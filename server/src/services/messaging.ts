@@ -253,10 +253,27 @@ async function touchConversation(
 ) {
   await query(
     `UPDATE conversations
-        SET last_message = $3,
-            last_message_direction = $4,
-            last_message_at = $5,
-            last_inbound_at = CASE WHEN $6 THEN $5 ELSE last_inbound_at END,
+        SET last_message = CASE
+              WHEN last_message_at IS NULL OR $5::timestamptz >= last_message_at
+                THEN $3
+              ELSE last_message
+            END,
+            last_message_direction = CASE
+              WHEN last_message_at IS NULL OR $5::timestamptz >= last_message_at
+                THEN $4
+              ELSE last_message_direction
+            END,
+            last_message_at = GREATEST(
+              COALESCE(last_message_at, $5::timestamptz),
+              $5::timestamptz
+            ),
+            last_inbound_at = CASE
+              WHEN $6 THEN GREATEST(
+                COALESCE(last_inbound_at, $5::timestamptz),
+                $5::timestamptz
+              )
+              ELSE last_inbound_at
+            END,
             unread_count = CASE WHEN $7 THEN unread_count + 1 ELSE unread_count END,
             archived = false
       WHERE company_id = $1 AND id = $2`,

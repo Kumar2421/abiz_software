@@ -33,10 +33,10 @@ const EMPTY_ACCOUNT: WhatsAppAccount = {
  *
  * There is no websocket: the API runs as a serverless function, so every poll
  * is a billable invocation. 30s keeps a single dashboard under ~30k calls a
- * month. Anything the user does — sending, opening a chat, returning to the
- * tab — refreshes immediately, so this interval only covers idle waiting.
+ * month at 30s. A 10s interval makes incoming/outgoing activity reorder the
+ * list promptly without requiring a websocket; user actions still refresh at once.
  */
-const POLL_MS = 30_000;
+const POLL_MS = 10_000;
 
 export default function InboxPage() {
   return (
