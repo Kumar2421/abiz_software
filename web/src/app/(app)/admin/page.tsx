@@ -127,7 +127,7 @@ export default function AdminPage() {
   if (users === null) return <TableSkeleton rows={8} />;
 
   return (
-    <div className="flex-1 overflow-y-auto p-6">
+    <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6">
       <header className="mb-6">
         <h1 className="text-xl font-semibold">Admin</h1>
         <p className="text-sm text-muted-foreground">
@@ -162,8 +162,8 @@ export default function AdminPage() {
         ))}
       </div>
 
-      <Tabs defaultValue="users">
-        <TabsList>
+      <Tabs defaultValue="users" className="min-w-0">
+        <TabsList className="h-auto max-w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="accounts">WhatsApp numbers</TabsTrigger>
           <TabsTrigger value="logs">Webhook logs</TabsTrigger>
