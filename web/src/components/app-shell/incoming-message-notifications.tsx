@@ -7,7 +7,6 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import type { Conversation } from "@/lib/types";
 
 const POLL_MS = 30_000;
 
@@ -22,10 +21,6 @@ export function IncomingMessageNotifications() {
   const initialized = React.useRef(false);
   const inFlight = React.useRef(false);
   const [permission, setPermission] = React.useState<NotificationPermission | "unsupported">("default");
-
-  React.useEffect(() => {
-    setPermission("Notification" in window ? Notification.permission : "unsupported");
-  }, []);
 
   const enableNotifications = async () => {
     if (!("Notification" in window)) {
