@@ -21,6 +21,7 @@ export function FolderNav({
   onSelect,
   query,
   onQueryChange,
+  className,
 }: {
   account: WhatsAppAccount;
   active: InboxFolder;
@@ -28,6 +29,7 @@ export function FolderNav({
   onSelect: (folder: InboxFolder) => void;
   query: string;
   onQueryChange: (value: string) => void;
+  className?: string;
 }) {
   return (
     <aside className={cn("flex w-full shrink-0 flex-col gap-3 border-b bg-card p-3 md:w-60 md:gap-4 md:border-r md:border-b-0", className)}>
