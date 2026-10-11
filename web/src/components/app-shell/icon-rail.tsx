@@ -38,7 +38,7 @@ export function IconRail() {
   const nav = user.role === "admin" ? [...NAV, ADMIN_NAV] : NAV;
 
   return (
-    <nav className="flex w-16 shrink-0 flex-col items-center gap-1 border-r bg-card py-3">
+    <nav className="hidden w-16 shrink-0 flex-col items-center gap-1 border-r bg-card py-3 md:flex">
       <Link
         href="/inbox"
         aria-label="Abiz"
