@@ -183,10 +183,11 @@ authRouter.post(
       throw ApiError.badRequest("Current password is incorrect");
     }
 
-    await queryOne(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
-      req.user!.id,
-      await hashPassword(input.newPassword),
-    ]);
+    const updated = await queryOne<{ id: string }>(
+      `UPDATE users SET password_hash = $2 WHERE id = $1 RETURNING id`,
+      [req.user!.id, await hashPassword(input.newPassword)],
+    );
+    if (!updated) throw ApiError.internal("Could not save the new password");
 
     res.json({ ok: true });
   }),
