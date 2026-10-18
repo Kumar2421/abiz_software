@@ -1,5 +1,5 @@
 import { env } from "../env.js";
-import { query, queryOne } from "../db/index.js";
+import { getDb, query, queryOne, type Queryable } from "../db/index.js";
 import { decryptSecret } from "../lib/crypto.js";
 import { ApiError } from "../lib/http.js";
 import { normalizePhone } from "../lib/phone.js";
@@ -19,6 +19,24 @@ import { classify, storeMedia } from "./media.js";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Every write below defaults to the plain connection pool, exactly as before.
+ * `receiveMessage` is the one caller that needs them to share a single
+ * transaction — see the comment there for why — so each takes an optional
+ * `exec` it runs through instead. Nothing about the default behaviour of any
+ * other call site changes.
+ */
+const DEFAULT_EXEC: Queryable = { query };
+
+async function oneVia<T>(
+  exec: Queryable,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T | null> {
+  const rows = await exec.query<T>(sql, params);
+  return rows[0] ?? null;
+}
+
 /* ------------------------------------------------------------------ */
 /* Contacts + conversations                                            */
 /* ------------------------------------------------------------------ */
@@ -27,16 +45,19 @@ export async function upsertContact(
   companyId: string,
   phoneInput: string,
   fallbackName?: string,
+  exec: Queryable = DEFAULT_EXEC,
 ): Promise<ContactRow> {
   const phone = normalizePhone(phoneInput);
 
-  const existing = await queryOne<ContactRow>(
+  const existing = await oneVia<ContactRow>(
+    exec,
     `SELECT * FROM contacts WHERE company_id = $1 AND phone = $2`,
     [companyId, phone],
   );
   if (existing) return existing;
 
-  const created = await queryOne<ContactRow>(
+  const created = await oneVia<ContactRow>(
+    exec,
     `INSERT INTO contacts (company_id, name, phone)
      VALUES ($1, $2, $3)
      RETURNING *`,
@@ -48,25 +69,29 @@ export async function upsertContact(
 export async function getOrCreateConversation(
   companyId: string,
   contactId: string,
+  exec: Queryable = DEFAULT_EXEC,
 ): Promise<ConversationRow> {
-  const existing = await findConversation(companyId, { contactId });
+  const existing = await findConversation(companyId, { contactId }, exec);
   if (existing) return existing;
 
-  const inserted = await queryOne<{ id: string }>(
+  const inserted = await oneVia<{ id: string }>(
+    exec,
     `INSERT INTO conversations (company_id, contact_id) VALUES ($1, $2) RETURNING id`,
     [companyId, contactId],
   );
 
-  const row = await findConversation(companyId, { id: inserted!.id });
+  const row = await findConversation(companyId, { id: inserted!.id }, exec);
   return row!;
 }
 
 async function findConversation(
   companyId: string,
   by: { id?: string; contactId?: string },
+  exec: Queryable = DEFAULT_EXEC,
 ): Promise<ConversationRow | null> {
   const clause = by.id ? "c.id = $2" : "c.contact_id = $2";
-  return queryOne<ConversationRow>(
+  return oneVia<ConversationRow>(
+    exec,
     `SELECT ${CONVERSATION_SELECT}
        FROM conversations c
        JOIN contacts ct ON ct.id = c.contact_id
@@ -210,8 +235,10 @@ async function insertMessage(
     messageType?: MessageRow["message_type"];
     mediaId?: string | null;
   },
+  exec: Queryable = DEFAULT_EXEC,
 ) {
-  const inserted = await queryOne<{ id: string }>(
+  const inserted = await oneVia<{ id: string }>(
+    exec,
     `INSERT INTO messages
        (company_id, conversation_id, direction, body, status, wa_message_id,
         error, message_type, media_id)
@@ -229,11 +256,15 @@ async function insertMessage(
       values.mediaId ?? null,
     ],
   );
-  return loadMessage(inserted!.id);
+  return loadMessage(inserted!.id, exec);
 }
 
-async function loadMessage(id: string): Promise<MessageRow> {
-  const row = await queryOne<MessageRow>(
+async function loadMessage(
+  id: string,
+  exec: Queryable = DEFAULT_EXEC,
+): Promise<MessageRow> {
+  const row = await oneVia<MessageRow>(
+    exec,
     `SELECT ${MESSAGE_SELECT} ${MESSAGE_FROM} WHERE m.id = $1`,
     [id],
   );
@@ -250,8 +281,9 @@ async function touchConversation(
     bumpUnread?: boolean;
     markInbound?: boolean;
   },
+  exec: Queryable = DEFAULT_EXEC,
 ) {
-  await query(
+  await exec.query(
     `UPDATE conversations
         SET last_message = CASE
               WHEN last_message_at IS NULL OR $5::timestamptz >= last_message_at
@@ -455,16 +487,8 @@ export async function receiveMessage(params: {
   /** Click-to-WhatsApp ad the customer arrived from, if any. */
   referral?: Record<string, unknown> | null;
 }) {
-  const contact = await upsertContact(
-    params.companyId,
-    params.fromPhone,
-    params.profileName,
-  );
-  const conversation = await getOrCreateConversation(
-    params.companyId,
-    contact.id,
-  );
-
+  // Supabase Storage, not Postgres — must finish before the transaction
+  // below opens, never held inside one.
   const stored = params.media
     ? await storeMedia({
         companyId: params.companyId,
@@ -474,39 +498,86 @@ export async function receiveMessage(params: {
       })
     : null;
 
-  const inbound = await insertMessage(params.companyId, conversation.id, {
-    direction: "in",
-    body: params.body,
-    status: "delivered",
-    waMessageId: params.waMessageId ?? null,
-    messageType: stored ? stored.kind : "text",
-    mediaId: stored?.id ?? null,
-  });
-
-  // The first ad-originated message tells us which campaign produced this
-  // customer. Recorded once; later messages must not overwrite it.
-  if (params.referral) {
-    await query(
-      `UPDATE conversations
-          SET ad_referral = COALESCE(ad_referral, $2::jsonb)
-        WHERE id = $1`,
-      [conversation.id, JSON.stringify(params.referral)],
+  /**
+   * This used to be five separate, unrelated statements. A connection
+   * problem partway through — real and measured on this deployment, a
+   * cross-region round trip that occasionally times out under concurrent
+   * load — could let insertMessage commit while touchConversation never
+   * ran: the message was safely stored, but the conversation's
+   * last_inbound_at and last_message_at stayed null. Two reported bugs
+   * traced back to exactly that: the 24h reply window reading as already
+   * closed (its check treats a null last_inbound_at as "this contact has
+   * never messaged", not "just messaged and the write was lost"), and the
+   * conversation not jumping to the top of the inbox, which sorts by
+   * last_message_at.
+   *
+   * One transaction means a failure anywhere in this sequence rolls back
+   * the whole thing instead of leaving it half-written with no trace — the
+   * webhook sees a clean failure, and a message that never landed can be
+   * recovered and replayed from the raw payload Meta sent, the same way a
+   * previously lost one was.
+   */
+  const db = await getDb();
+  const { conversationId, inbound } = await db.transaction(async (tx) => {
+    const contact = await upsertContact(
+      params.companyId,
+      params.fromPhone,
+      params.profileName,
+      tx,
     );
-  }
+    const conversation = await getOrCreateConversation(
+      params.companyId,
+      contact.id,
+      tx,
+    );
 
-  await touchConversation(params.companyId, conversation.id, {
-    // A photo with no caption still needs a readable list preview.
-    lastMessage:
-      params.body ||
-      (stored ? `[${stored.kind}] ${stored.fileName}` : ""),
-    direction: "in",
-    at: new Date(inbound.created_at).toISOString(),
-    bumpUnread: true,
-    markInbound: true,
+    const inbound = await insertMessage(
+      params.companyId,
+      conversation.id,
+      {
+        direction: "in",
+        body: params.body,
+        status: "delivered",
+        waMessageId: params.waMessageId ?? null,
+        messageType: stored ? stored.kind : "text",
+        mediaId: stored?.id ?? null,
+      },
+      tx,
+    );
+
+    // The first ad-originated message tells us which campaign produced this
+    // customer. Recorded once; later messages must not overwrite it.
+    if (params.referral) {
+      await tx.query(
+        `UPDATE conversations
+            SET ad_referral = COALESCE(ad_referral, $2::jsonb)
+          WHERE id = $1`,
+        [conversation.id, JSON.stringify(params.referral)],
+      );
+    }
+
+    await touchConversation(
+      params.companyId,
+      conversation.id,
+      {
+        // A photo with no caption still needs a readable list preview.
+        lastMessage:
+          params.body || (stored ? `[${stored.kind}] ${stored.fileName}` : ""),
+        direction: "in",
+        at: new Date(inbound.created_at).toISOString(),
+        bumpUnread: true,
+        markInbound: true,
+      },
+      tx,
+    );
+
+    return { conversationId: conversation.id, inbound };
   });
 
-
-  await maybeSendWelcome(params.companyId, conversation.id);
+  // Sends a real WhatsApp message, so it has to run after the transaction
+  // commits — never inside one, which would hold a DB transaction open for
+  // the duration of an HTTP call to Meta.
+  await maybeSendWelcome(params.companyId, conversationId);
 
   return toMessage(inbound);
 }

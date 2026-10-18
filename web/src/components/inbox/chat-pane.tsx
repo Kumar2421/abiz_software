@@ -170,7 +170,20 @@ export function ChatPane({
                 </span>
               </div>
               {group.items.map((message) => (
-                <MessageBubble key={message.id} message={message} />
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  onRetry={(id) => {
+                    // The failed row stays in history as an honest record;
+                    // resending goes through the normal send path so it gets
+                    // everything a message normally would — a fresh attempt,
+                    // correct status tracking, the conversation moving to
+                    // the top. There was no code path connecting the button
+                    // to anything, so it had been a dead click.
+                    const original = messages.find((m) => m.id === id);
+                    if (original) onSend(original.body);
+                  }}
+                />
               ))}
             </React.Fragment>
           ))}
