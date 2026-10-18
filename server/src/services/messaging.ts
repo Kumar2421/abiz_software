@@ -56,14 +56,26 @@ export async function upsertContact(
   );
   if (existing) return existing;
 
+  // Two inbound messages from a brand-new contact can race here (two
+  // concurrent webhook deliveries, not just a retry) — ON CONFLICT instead of
+  // a bare INSERT means the loser gets the winner's row instead of a unique
+  // violation that would roll back the whole message.
   const created = await oneVia<ContactRow>(
     exec,
     `INSERT INTO contacts (company_id, name, phone)
      VALUES ($1, $2, $3)
+     ON CONFLICT (company_id, phone) DO NOTHING
      RETURNING *`,
     [companyId, fallbackName?.trim() || `+${phone}`, phone],
   );
-  return created!;
+  if (created) return created;
+
+  const winner = await oneVia<ContactRow>(
+    exec,
+    `SELECT * FROM contacts WHERE company_id = $1 AND phone = $2`,
+    [companyId, phone],
+  );
+  return winner!;
 }
 
 export async function getOrCreateConversation(
@@ -76,11 +88,18 @@ export async function getOrCreateConversation(
 
   const inserted = await oneVia<{ id: string }>(
     exec,
-    `INSERT INTO conversations (company_id, contact_id) VALUES ($1, $2) RETURNING id`,
+    `INSERT INTO conversations (company_id, contact_id) VALUES ($1, $2)
+     ON CONFLICT (company_id, contact_id) DO NOTHING
+     RETURNING id`,
     [companyId, contactId],
   );
 
-  const row = await findConversation(companyId, { id: inserted!.id }, exec);
+  // A concurrent call already inserted it between the SELECT above and this
+  // INSERT — same conversation either way, just look it up by contact_id
+  // instead of the id this call never got to create.
+  const row = inserted
+    ? await findConversation(companyId, { id: inserted.id }, exec)
+    : await findConversation(companyId, { contactId }, exec);
   return row!;
 }
 
@@ -243,6 +262,7 @@ async function insertMessage(
        (company_id, conversation_id, direction, body, status, wa_message_id,
         error, message_type, media_id)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
      RETURNING id`,
     [
       companyId,
@@ -256,7 +276,20 @@ async function insertMessage(
       values.mediaId ?? null,
     ],
   );
-  return loadMessage(inserted!.id, exec);
+
+  // A retried webhook delivery for a wa_message_id already stored hits the
+  // ON CONFLICT above and inserts nothing — without this fallback that would
+  // crash on `inserted!.id` instead of returning the message already on file.
+  if (!inserted) {
+    const existing = await oneVia<{ id: string }>(
+      exec,
+      `SELECT id FROM messages WHERE wa_message_id = $1`,
+      [values.waMessageId],
+    );
+    return loadMessage(existing!.id, exec);
+  }
+
+  return loadMessage(inserted.id, exec);
 }
 
 async function loadMessage(
@@ -498,6 +531,19 @@ export async function receiveMessage(params: {
       })
     : null;
 
+  // Meta retries a webhook delivery it didn't get a fast enough 200 for —
+  // exactly the cross-region timeout already measured on this deployment.
+  // Without this check the retry re-runs everything below: a second unread
+  // bump, a second welcome-trigger race, and (before the ON CONFLICT in
+  // insertMessage) a constraint violation that rolled back the whole write.
+  if (params.waMessageId) {
+    const existing = await queryOne<{ id: string }>(
+      `SELECT id FROM messages WHERE wa_message_id = $1`,
+      [params.waMessageId],
+    );
+    if (existing) return toMessage(await loadMessage(existing.id));
+  }
+
   /**
    * This used to be five separate, unrelated statements. A connection
    * problem partway through — real and measured on this deployment, a
@@ -613,14 +659,40 @@ async function maybeSendWelcome(companyId: string, conversationId: string) {
     .replaceAll("{{phone}}", display?.display_number ?? "")
     .replaceAll("{{address}}", company?.address ?? "");
 
-  // Mark first so a delivery failure cannot cause a welcome loop.
-  await query(
-    `UPDATE conversations SET welcome_sent = true WHERE id = $1`,
+  // Claim atomically — two inbound messages for the same new contact can
+  // reach here concurrently (a retried webhook delivery), and without the
+  // `AND welcome_sent = false` guard both would read false and both send.
+  const claimed = await queryOne<{ id: string }>(
+    `UPDATE conversations SET welcome_sent = true
+      WHERE id = $1 AND welcome_sent = false
+      RETURNING id`,
     [conversationId],
   );
+  if (!claimed) return;
 
   void account; // credentials are re-read inside sendMessage
-  await sendMessage(companyId, conversationId, body);
+  try {
+    const sent = await sendMessage(companyId, conversationId, body);
+    if (sent.status !== "sent") {
+      // Provider rejected it (e.g. template/session error) rather than
+      // throwing. Un-claim so the next inbound message retries the welcome
+      // instead of silently skipping it forever.
+      await query(
+        `UPDATE conversations SET welcome_sent = false WHERE id = $1`,
+        [conversationId],
+      );
+    }
+  } catch (error) {
+    await query(
+      `UPDATE conversations SET welcome_sent = false WHERE id = $1`,
+      [conversationId],
+    );
+    console.warn(
+      `[messaging] welcome send failed for conversation ${conversationId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 /**

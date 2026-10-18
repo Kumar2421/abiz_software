@@ -28,7 +28,7 @@ const FALLBACK: Plan[] = [
   {
     code: "monthly",
     name: "Abiz Monthly",
-    amountPaise: 199900,
+    amountPaise: 235882, // 199900 + 18% GST
     currency: "INR",
     periodDays: 30,
   },
@@ -50,10 +50,12 @@ const INCLUDED = [
 ];
 
 function term(plan: Plan): string {
-  if (!plan.periodDays) return "one-time payment · lifetime access";
-  return plan.periodDays === 30
-    ? "for 30 days · renew when it ends"
-    : `for ${plan.periodDays} days · renew when it ends`;
+  const base = !plan.periodDays
+    ? "one-time payment · lifetime access"
+    : plan.periodDays === 30
+      ? "for 30 days · renew when it ends"
+      : `for ${plan.periodDays} days · renew when it ends`;
+  return plan.code === "monthly" ? `${base} · incl. 18% GST` : base;
 }
 
 export default function PricingPage() {

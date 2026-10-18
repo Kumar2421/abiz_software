@@ -76,11 +76,25 @@ export async function resolvePlan(code?: string | null): Promise<PlanRow> {
   return plan;
 }
 
+/**
+ * GST (India, 18%) on top of the monthly plan only, per the current pricing
+ * decision — the lifetime plan's price is untouched for now. `amount_paise`
+ * in the `plans` table stays the base price; this is the one place gross is
+ * computed, so display and the amount actually charged can never drift apart.
+ */
+const GST_RATE = 0.18;
+
+function amountWithGst(plan: Pick<PlanRow, "code" | "amount_paise">): number {
+  return plan.code === "monthly"
+    ? Math.round(plan.amount_paise * (1 + GST_RATE))
+    : plan.amount_paise;
+}
+
 /** Shape a plan row for the API. */
 export const planShape = (plan: PlanRow) => ({
   code: plan.code,
   name: plan.name,
-  amountPaise: plan.amount_paise,
+  amountPaise: amountWithGst(plan),
   currency: plan.currency,
   periodDays: plan.period_days,
 });
@@ -282,10 +296,11 @@ export async function createOrder(companyId: string, planCode?: string | null) {
   if (!gate.open) throw new ApiError(409, gate.reason!, "payment_not_due");
 
   const customer = await billingCustomer(companyId);
+  const chargeAmountPaise = amountWithGst(plan);
 
   const order = await gateway.createOrder({
     orderId: `abiz_${companyId.slice(0, 8)}_${Date.now()}`,
-    amountPaise: plan.amount_paise,
+    amountPaise: chargeAmountPaise,
     currency: plan.currency,
     customer,
     notifyUrl: `${publicUrl}/api/billing/webhook`,
@@ -302,7 +317,7 @@ export async function createOrder(companyId: string, planCode?: string | null) {
       plan.id,
       gateway.name,
       order.orderId,
-      plan.amount_paise,
+      chargeAmountPaise,
       plan.currency,
       JSON.stringify(order),
     ],
@@ -318,7 +333,7 @@ export async function createOrder(companyId: string, planCode?: string | null) {
 
   return {
     orderId: order.orderId,
-    amountPaise: plan.amount_paise,
+    amountPaise: chargeAmountPaise,
     currency: plan.currency,
     // Only meaningful for Razorpay, and only sent when Razorpay made the
     // order. Sending it otherwise hands every signed-in browser the live
