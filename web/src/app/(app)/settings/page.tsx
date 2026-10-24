@@ -208,7 +208,7 @@ function BillingTab() {
 
 export default function SettingsPage() {
   return (
-    <React.Suspense fallback={null}>
+    <React.Suspense fallback={<SettingsSkeleton />}>
       <SettingsView />
     </React.Suspense>
   );

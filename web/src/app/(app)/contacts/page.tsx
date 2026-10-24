@@ -157,7 +157,9 @@ export default function ContactsPage() {
   }, [router]);
 
   React.useEffect(() => {
-    const timer = setTimeout(() => void load(query.trim() || undefined), 250);
+    // Load immediately on first render; debounce only active search input.
+    const delay = query.trim() ? 250 : 0;
+    const timer = setTimeout(() => void load(query.trim() || undefined), delay);
     return () => clearTimeout(timer);
   }, [query, load]);
 

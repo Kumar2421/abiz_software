@@ -34,33 +34,95 @@ export class ApiError extends Error {
   }
 }
 
+// Share identical in-flight GETs across screens (notably Inbox and the
+// app-wide notification watcher), and keep a very short cache for navigation.
+// The short TTL is deliberately below the polling interval so live data is
+// still refreshed regularly. Any write invalidates cached reads.
+const GET_CACHE_TTL_MS = 2_000;
+const getCache = new Map<string, { expiresAt: number; payload: unknown }>();
+const getInFlight = new Map<string, Promise<unknown>>();
+let cacheGeneration = 0;
+
+function invalidateGetCache() {
+  cacheGeneration += 1;
+  getCache.clear();
+  // A read started before a write must not be reused by a later caller.
+  getInFlight.clear();
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...init,
-    // The session lives in an httpOnly cookie set by the API.
-    credentials: "include",
-    headers: {
-      // FormData sets its own multipart Content-Type, boundary included.
-      ...(init.body && !(init.body instanceof FormData)
-        ? { "Content-Type": "application/json" }
-        : {}),
-      ...init.headers,
-    },
-  });
+  const method = (init.method ?? "GET").toUpperCase();
+  const url = `${API_URL}${path}`;
+  const cacheable = method === "GET";
+  const cacheKey = url;
 
-  const text = await response.text();
-  const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+  if (cacheable) {
+    const cached = getCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.payload as T;
+    }
+    if (cached) getCache.delete(cacheKey);
 
-  if (!response.ok) {
-    throw new ApiError(
-      response.status,
-      (payload.message as string) ?? "Request failed",
-      (payload.error as string) ?? "error",
-      Array.isArray(payload.details) ? (payload.details as FieldIssue[]) : [],
-    );
+    const inFlight = getInFlight.get(cacheKey);
+    if (inFlight) return inFlight as Promise<T>;
+  } else {
+    // Writes may change any related list/detail endpoint.
+    invalidateGetCache();
   }
 
-  return payload as T;
+  const generationAtStart = cacheGeneration;
+  const run = async (): Promise<T> => {
+    const response = await fetch(url, {
+      ...init,
+      // The session lives in an httpOnly cookie set by the API.
+      credentials: "include",
+      headers: {
+        // FormData sets its own multipart Content-Type, boundary included.
+        ...(init.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
+        ...init.headers,
+      },
+    });
+
+    const text = await response.text();
+    const payload = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+    if (!response.ok) {
+      throw new ApiError(
+        response.status,
+        (payload.message as string) ?? "Request failed",
+        (payload.error as string) ?? "error",
+        Array.isArray(payload.details) ? (payload.details as FieldIssue[]) : [],
+      );
+    }
+
+    if (cacheable && generationAtStart === cacheGeneration) {
+      getCache.set(cacheKey, {
+        expiresAt: Date.now() + GET_CACHE_TTL_MS,
+        payload,
+      });
+    }
+    return payload as T;
+  };
+
+  if (!cacheable) {
+    try {
+      return await run();
+    } finally {
+      // Clear again after the write completes so concurrent reads cannot leave
+      // stale list/detail data cached during the mutation.
+      invalidateGetCache();
+    }
+  }
+
+  const pending = run();
+  getInFlight.set(cacheKey, pending);
+  try {
+    return await pending;
+  } finally {
+    if (getInFlight.get(cacheKey) === pending) getInFlight.delete(cacheKey);
+  }
 }
 
 const post = <T>(path: string, body?: unknown) =>
