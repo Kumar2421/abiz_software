@@ -173,14 +173,21 @@ const STATUS_MAP: Record<string, "sent" | "delivered" | "read" | "failed"> = {
 };
 
 /**
- * Always answers 200 — Meta retries aggressively on any non-200, so failures
- * are recorded in `webhook_logs` instead of being surfaced as HTTP errors.
+ * Only answers 200 once every message below is actually durably stored.
+ *
+ * Used to answer 200 unconditionally before doing anything, on the theory
+ * that failures would be recorded in `webhook_logs` and dealt with later.
+ * In practice a DB connection timeout — a real, repeated failure mode on
+ * this deployment's cross-region setup — then had no trace at all beyond
+ * that log row: Meta saw 200, believed the delivery succeeded, and never
+ * retried, so the message was gone for good. receiveMessage/insertMessage
+ * are now idempotent on wa_message_id (see services/messaging.ts), so it's
+ * safe to let Meta's own retry do the recovering instead of answering 200
+ * on faith.
  */
 webhookRouter.post(
   "/",
   asyncHandler(async (req, res) => {
-    res.sendStatus(200);
-
     const payload = req.body as CloudPayload;
 
     try {
@@ -252,13 +259,21 @@ webhookRouter.post(
           await log(account.company_id, "message.received", value);
         }
       }
+
+      res.sendStatus(200);
     } catch (error) {
-      await log(
-        null,
-        "webhook.error",
-        payload,
-        error instanceof Error ? error.message : String(error),
-      );
+      try {
+        await log(
+          null,
+          "webhook.error",
+          payload,
+          error instanceof Error ? error.message : String(error),
+        );
+      } catch {
+        // The DB is unreachable even for logging the failure — Meta's retry,
+        // not this log row, is what recovers the message now.
+      }
+      throw error; // reaches asyncHandler -> errorHandler -> non-200, so Meta retries
     }
   }),
 );

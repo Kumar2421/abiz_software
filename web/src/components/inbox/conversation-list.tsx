@@ -98,7 +98,7 @@ export function ConversationList({
   className?: string;
 }) {
   return (
-    <div className={cn("flex w-full flex-col border-r bg-card lg:w-85", className)}>
+    <div className={cn("flex min-h-0 w-full flex-col border-r bg-card lg:w-85", className)}>
       <div className="flex h-14 items-center border-b px-4">
         <h2 className="text-sm font-semibold">Conversations</h2>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">
@@ -117,7 +117,7 @@ export function ConversationList({
         {action}
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         {loading ? (
           <div className="space-y-3 p-4">
             {[0, 1, 2, 3, 4].map((row) => (

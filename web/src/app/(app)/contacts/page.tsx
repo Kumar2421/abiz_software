@@ -142,11 +142,21 @@ export default function ContactsPage() {
   const [pending, setPending] = React.useState(false);
   const [editing, setEditing] = React.useState<Contact | null>(null);
 
+  // The search debounce and the 10s auto-refresh below both call `load`
+  // independently — without this guard, whichever request's response arrives
+  // last wins, even if it was fired first. A slow background refresh landing
+  // after a fast search result would silently overwrite what the user just
+  // searched for.
+  const requestIdRef = React.useRef(0);
+
   const load = React.useCallback(async (search?: string) => {
+    const requestId = ++requestIdRef.current;
     try {
       const { contacts: rows } = await api.contacts(search);
+      if (requestId !== requestIdRef.current) return;
       setContacts(rows);
     } catch (error) {
+      if (requestId !== requestIdRef.current) return;
       if (error instanceof ApiError && error.status === 401) {
         router.replace("/login");
         return;
