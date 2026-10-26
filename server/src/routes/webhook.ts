@@ -84,6 +84,7 @@ interface CloudPayload {
           interactive?: {
             button_reply?: { title?: string };
             list_reply?: { title?: string };
+            nfm_reply?: { response_json?: string };
           };
           referral?: Record<string, unknown>;
         }[];
@@ -104,6 +105,31 @@ type InboundMessage = NonNullable<
 >["messages"];
 
 type Inbound = NonNullable<InboundMessage>[number];
+
+/**
+ * A WhatsApp Flow submission's `response_json` is a flat object whose keys
+ * are generated per-flow ("screen_0_Name_0", "screen_0__0" for an unnamed
+ * field) — there's no fixed schema to read field names from, so this turns
+ * the key into a label instead of showing nothing. flow_token/flow_id are
+ * WhatsApp's own bookkeeping, not something the customer typed.
+ */
+function flowReplyBody(responseJson: string): string | null {
+  let fields: Record<string, unknown>;
+  try {
+    fields = JSON.parse(responseJson) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  const parts = Object.entries(fields)
+    .filter(([key]) => key !== "flow_token" && key !== "flow_id")
+    .map(([key, value]) => {
+      const label = key.replace(/^screen_\d+_/, "").replace(/_\d+$/, "") || "Field";
+      return `${label.charAt(0).toUpperCase()}${label.slice(1)}: ${value}`;
+    });
+
+  return parts.length ? `Form submitted — ${parts.join(", ")}` : null;
+}
 
 /** The attachment on a message, whichever media field carries it. */
 function mediaPart(message: Inbound): MediaPart | undefined {
@@ -138,6 +164,12 @@ function bodyOf(message: Inbound): string {
     message.interactive?.button_reply?.title ??
     message.interactive?.list_reply?.title;
   if (interactive) return interactive;
+
+  const responseJson = message.interactive?.nfm_reply?.response_json;
+  if (responseJson) {
+    const flowBody = flowReplyBody(responseJson);
+    if (flowBody) return flowBody;
+  }
 
   // Unsupported type (contacts, reaction, order, …): keep a placeholder so the
   // conversation shows that something arrived.
